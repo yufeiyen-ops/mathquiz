@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QuizPro — 圖片測驗系統</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --pri:#1a6b52;--pri-l:#e8f5f0;--pri-b:#9dcfbf;
+  --red:#b83232;--red-l:#fbeaea;
+  --amb:#b06000;--amb-l:#fdf3e3;
+  --bg:#f7f6f2;--surf:#fff;--surf2:#f2f1ec;
+  --bdr:#e4e3db;--bdr2:#cecdc4;
+  --ink:#1a1a17;--ink2:#5a5955;--ink3:#9a9990;
+  --sh:0 1px 3px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.04);
+  --rad:10px;--rad-lg:14px
+}
+body{font-family:"Noto Sans TC",system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;font-size:14px;line-height:1.6}
+
+/* ── TOPBAR ── */
+.topbar{background:var(--surf);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 20px;position:sticky;top:0;z-index:200;gap:0}
+.logo{font-weight:800;font-size:15px;padding:14px 0;margin-right:28px;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.logo em{color:var(--pri);font-style:normal}
+.logo small{font-size:10px;background:var(--pri);color:#fff;border-radius:4px;padding:1px 6px;font-weight:600;letter-spacing:.03em;font-style:normal}
+.tabs{display:flex;gap:0;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{padding:0 16px;height:50px;border:none;background:none;font-size:13.5px;font-weight:500;cursor:pointer;color:var(--ink3);border-bottom:2.5px solid transparent;transition:all .15s;font-family:inherit;white-space:nowrap;flex-shrink:0}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--pri);border-bottom-color:var(--pri)}
+.badge{background:var(--pri);color:#fff;font-size:11px;border-radius:99px;padding:1px 7px;margin-left:5px;font-weight:700}
+.badge-red{background:var(--red)}
+
+/* ── LAYOUT ── */
+.main{max-width:840px;margin:0 auto;padding:24px 16px}
+.panel{display:none}.panel.on{display:block}
+.card{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rad-lg);padding:22px;margin-bottom:16px;box-shadow:var(--sh)}
+.card-title{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.step-dot{width:22px;height:22px;border-radius:50%;background:var(--pri);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* ── FORMS ── */
+.fi{width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--bdr2);font-size:14px;font-family:inherit;outline:none;background:#fff;color:var(--ink);transition:border-color .15s}
+.fi:focus{border-color:var(--pri)}
+.fi-sm{padding:7px 10px;font-size:13px}
+label.lbl{font-size:12px;font-weight:600;color:var(--ink2);display:block;margin-bottom:5px}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;border:1.5px solid transparent;transition:all .15s;white-space:nowrap}
+.btn-p{background:var(--pri);color:#fff;border-color:var(--pri)}.btn-p:hover{background:#145a43}.btn-p:disabled{background:#b0b0a8;border-color:#b0b0a8;cursor:not-allowed}
+.btn-g{background:#fff;color:var(--ink2);border-color:var(--bdr2)}.btn-g:hover{background:var(--surf2)}
+.btn-red{background:var(--red);color:#fff;border-color:var(--red)}.btn-red:hover{background:#8c2020}
+.btn-sm{padding:7px 14px;font-size:13px}
+.btn-add{border:1.5px dashed var(--bdr2);background:transparent;border-radius:8px;padding:7px 14px;font-size:13px;color:var(--ink3);cursor:pointer;font-family:inherit;transition:all .15s}
+.btn-add:hover{border-color:var(--pri);color:var(--pri)}
+
+/* ── UPLOAD ── */
+.drop-zone{border:2px dashed var(--bdr2);border-radius:var(--rad-lg);padding:28px 16px;text-align:center;cursor:pointer;background:var(--surf2);transition:all .2s;margin-bottom:14px}
+.drop-zone:hover,.drop-zone.over{border-color:var(--pri);background:var(--pri-l)}
+.img-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}
+.img-slot{aspect-ratio:1;border-radius:9px;border:1.5px solid var(--bdr2);background:var(--surf2);position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:border-color .15s}
+.img-slot.filled{border-color:var(--pri)}
+.img-slot img{width:100%;height:100%;object-fit:cover}
+.slot-ph{text-align:center;pointer-events:none}
+.slot-ph b{font-size:22px;color:var(--bdr2);font-family:monospace}
+.slot-ph small{font-size:11px;color:var(--ink3);display:block;margin-top:2px}
+.del-img{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:rgba(184,50,50,.9);color:#fff;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;z-index:2}
+.img-slot:hover .del-img{opacity:1}
+
+/* ── ANSWER GRID ── */
+.ans-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.ans-col .ans-lbl{font-size:11px;font-weight:700;color:var(--ink3);text-align:center;margin-bottom:7px;letter-spacing:.06em}
+.choice-set{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.choice-opt{padding:9px 0;border-radius:8px;border:2px solid var(--bdr2);background:#fff;font-weight:700;font-size:16px;font-family:monospace;cursor:pointer;transition:all .12s;color:var(--ink3);text-align:center}
+.choice-opt:hover{border-color:var(--pri);color:var(--pri)}
+.choice-opt.sel{border-color:var(--pri);background:var(--pri);color:#fff}
+
+/* ── STUDENT LIST ── */
+.stu-list{display:flex;flex-direction:column;gap:7px;margin-bottom:11px}
+.stu-row{display:grid;grid-template-columns:26px 1fr 28px;gap:8px;align-items:center}
+.stu-num{font-size:12px;color:var(--ink3);text-align:center;font-weight:600}
+.stu-del{width:28px;height:28px;border:none;background:none;color:var(--ink3);cursor:pointer;border-radius:7px;font-size:15px;transition:all .15s;display:flex;align-items:center;justify-content:center}
+.stu-del:hover{background:var(--red-l);color:var(--red)}
+
+/* ── STATUS BAR ── */
+.status-bar{border-radius:9px;padding:10px 15px;font-size:13px;display:flex;align-items:center;gap:8px;margin-top:14px}
+.sb-green{background:var(--pri-l);border:1px solid var(--pri-b);color:var(--pri)}
+.sb-red{background:var(--red-l);border:1px solid #f0b0b0;color:var(--red)}
+.sb-amb{background:var(--amb-l);border:1px solid #f0c870;color:var(--amb)}
+.pulse{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:pu 1.6s infinite}
+.pulse-g{background:var(--pri)}.pulse-r{background:var(--red)}
+@keyframes pu{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── STUDENT VIEW ── */
+.sv-wrap{max-width:500px;margin:0 auto;padding-top:10px}
+.hero{text-align:center;margin-bottom:24px}
+.hero h1{font-size:22px;font-weight:800;margin-bottom:4px}
+.hero p{font-size:13px;color:var(--ink3)}
+select.sel-big{width:100%;padding:12px 14px;border-radius:10px;border:1.5px solid var(--bdr2);font-size:15px;background:#fff;font-family:inherit;outline:none;color:var(--ink);cursor:pointer;margin-bottom:11px}
+select.sel-big:focus{border-color:var(--pri)}
+.q-progress{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.prog-dots{display:flex;gap:5px;flex:1}
+.pdot{flex:1;height:4px;border-radius:2px;background:var(--bdr2);transition:all .3s}
+.pdot.done{background:var(--pri)}.pdot.cur{background:var(--pri);opacity:.55}
+.prog-lbl{font-size:12px;color:var(--ink3);font-family:monospace;white-space:nowrap}
+.q-img{background:var(--surf2);border-radius:var(--rad-lg);border:1px solid var(--bdr);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:20px;min-height:180px;max-height:400px}
+.q-img img{max-width:100%;max-height:400px;object-fit:contain;display:block}
+.no-img{font-size:13px;color:var(--ink3);padding:40px;text-align:center}
+.abcd{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:15px}
+.aBtn{padding:22px 10px;border-radius:12px;border:2px solid var(--bdr2);background:#fff;font-size:26px;font-weight:800;font-family:monospace;cursor:pointer;transition:all .12s;color:var(--ink3);text-align:center;user-select:none}
+.aBtn:hover:not(:disabled){border-color:var(--pri);color:var(--pri);background:var(--pri-l);transform:translateY(-1px)}
+.aBtn.sel{border-color:var(--pri);background:var(--pri-l);color:var(--pri)}
+.aBtn.correct{border-color:var(--pri);background:var(--pri);color:#fff}
+.aBtn.wrong{border-color:var(--red);background:var(--red-l);color:var(--red)}
+.aBtn:disabled{cursor:default}
+.fb{border-radius:9px;padding:11px 15px;font-size:14px;font-weight:500;margin-bottom:14px;display:none;align-items:center;gap:7px}
+.fb.show{display:flex}
+.fb-ok{background:var(--pri-l);border:1px solid var(--pri-b);color:#0f4432}
+.fb-fail{background:var(--red-l);border:1px solid #f0b0b0;color:var(--red)}
+
+/* ── RESULT ── */
+.res-hero{text-align:center;padding:28px 16px}
+.big-num{font-size:66px;font-weight:800;line-height:1;font-family:monospace}
+.res-items{display:flex;flex-direction:column;gap:0}
+.res-row{display:grid;grid-template-columns:30px 42px 1fr 22px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--surf2)}
+.res-row:last-child{border:none}
+.rq{width:28px;height:28px;border-radius:50%;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.rq-ok{background:var(--pri-l);color:var(--pri)}.rq-fail{background:var(--red-l);color:var(--red)}
+.r-thumb{width:40px;height:40px;object-fit:cover;border-radius:7px;border:1px solid var(--bdr)}
+.r-ans{font-size:13px;color:var(--ink2)}
+.r-ans strong{font-family:monospace;color:var(--ink)}
+.r-icon{font-size:16px;justify-self:end}
+
+/* ── STATS ── */
+.stat-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:18px}
+.sc{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rad-lg);padding:18px 14px;text-align:center;box-shadow:var(--sh)}
+.sc .num{font-size:36px;font-weight:800;font-family:monospace;line-height:1}
+.sc .lbl{font-size:11px;color:var(--ink3);margin-top:4px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;padding:7px 10px;font-size:11px;font-weight:700;color:var(--ink3);letter-spacing:.07em;text-transform:uppercase;border-bottom:2px solid var(--surf2)}
+.tbl td{padding:10px 10px;border-bottom:1px solid var(--surf2);vertical-align:middle}
+.tbl tr:last-child td{border:none}
+.tbl tbody tr:hover td{background:var(--surf2)}
+.bar-wr{display:flex;align-items:center;gap:8px}
+.bar-tr{flex:1;height:6px;background:var(--surf2);border-radius:3px;overflow:hidden;min-width:50px}
+.bar-fi{height:100%;border-radius:3px;transition:width .6s ease}
+.b-hi{background:var(--red)}.b-mid{background:var(--amb)}.b-lo{background:var(--pri)}
+.bar-pct{font-size:12px;font-weight:700;font-family:monospace;min-width:32px;text-align:right}
+.ntag{display:inline-block;background:var(--red-l);color:var(--red);border-radius:99px;padding:2px 9px;font-size:12px;margin:2px 2px;font-weight:500}
+.sp{border-radius:99px;padding:3px 13px;font-size:13px;font-weight:700;font-family:monospace}
+.sp-f{background:var(--pri-l);color:#0f4432}
+.sp-m{background:var(--amb-l);color:var(--amb)}
+.sp-l{background:var(--red-l);color:var(--red)}
+.dot-ok{width:22px;height:22px;border-radius:50%;background:var(--pri-l);color:var(--pri);font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin:2px}
+.dot-fail{width:22px;height:22px;border-radius:50%;background:var(--red-l);color:var(--red);font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin:2px}
+.q-mini{width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--bdr);margin-right:6px;vertical-align:middle}
+
+/* ── HISTORY ── */
+.hist-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--surf2);cursor:pointer;transition:background .15s}
+.hist-row:last-child{border:none}
+.hist-row:hover{background:var(--surf2);margin:0 -22px;padding:12px 22px;border-radius:8px}
+.hist-date{font-size:12px;color:var(--ink3);font-family:monospace;white-space:nowrap}
+.hist-title{font-size:14px;font-weight:600}
+.hist-sub{font-size:12px;color:var(--ink3);margin-top:1px}
+.hist-cnt{font-size:13px;font-weight:600;color:var(--pri)}
+.hist-del-btn{background:none;border:none;color:var(--ink3);cursor:pointer;padding:4px 8px;border-radius:6px;font-size:13px;transition:all .15s}
+.hist-del-btn:hover{background:var(--red-l);color:var(--red)}
+
+/* ── SETUP WIZARD ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 16px}
+.wizard{background:#fff;border-radius:18px;max-width:640px;width:100%;padding:32px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.wiz-title{font-size:20px;font-weight:800;margin-bottom:6px}
+.wiz-sub{font-size:13px;color:var(--ink3);margin-bottom:24px}
+.step-list{display:flex;flex-direction:column;gap:16px;margin-bottom:24px}
+.step-card{border:1px solid var(--bdr);border-radius:var(--rad);padding:16px;background:var(--surf2)}
+.step-card h3{font-size:14px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.step-card p,.step-card li{font-size:13px;color:var(--ink2);line-height:1.7}
+.step-card ul{padding-left:18px}
+.step-card a{color:var(--pri);text-decoration:none;font-weight:500}
+.step-card a:hover{text-decoration:underline}
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.cfg-field{display:flex;flex-direction:column;gap:5px}
+.cfg-field.full{grid-column:1/-1}
+.cfg-field label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em}
+.cfg-field input{padding:8px 11px;border-radius:8px;border:1.5px solid var(--bdr2);font-size:13px;font-family:monospace;outline:none;color:var(--ink);background:#fff}
+.cfg-field input:focus{border-color:var(--pri)}
+.wiz-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.connection-status{font-size:13px;margin-top:12px;padding:9px 13px;border-radius:8px;display:none}
+
+/* ── EMPTY ── */
+.empty{text-align:center;padding:52px 20px;color:var(--ink2)}
+.empty-icon{font-size:44px;margin-bottom:12px}
+.empty-title{font-size:16px;font-weight:700;margin-bottom:5px;color:var(--ink)}
+.empty-hint{font-size:13px;color:var(--ink3)}
+
+.divider{height:1px;background:var(--bdr);margin:18px 0}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;margin-right:4px}
+.tag-live{background:var(--pri-l);color:var(--pri)}
+.tag-done{background:var(--surf2);color:var(--ink3)}
+
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+.draft-card{background:var(--surf2);border:1px solid var(--bdr);border-radius:var(--rad);padding:14px 16px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:8px;transition:all .15s}
+.draft-card:hover{border-color:var(--pri);background:var(--pri-l)}
+.draft-card:last-child{margin-bottom:0}
+.draft-title{font-size:14px;font-weight:600;margin-bottom:2px}
+.draft-meta{font-size:12px;color:var(--ink3)}
+.draft-actions{display:flex;gap:6px;flex-shrink:0}
+.btn-activate{background:var(--pri);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap}
+.btn-activate:hover{background:#145a43}
+.btn-activate.active-now{background:#888;cursor:default}
+.btn-draft-del{background:none;border:1px solid var(--bdr2);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--ink3);cursor:pointer;transition:all .15s}
+.btn-draft-del:hover{background:var(--red-l);color:var(--red);border-color:var(--red)}
+.active-badge{display:inline-block;background:var(--pri);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;margin-left:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:520px){
+  .stat-cards{grid-template-columns:1fr 1fr}.sc:last-child{grid-column:1/-1}
+  .abcd{gap:8px}.aBtn{padding:18px 8px;font-size:22px}
+  .cfg-grid{grid-template-columns:1fr}
+  .main{padding:16px 12px}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ SETUP OVERLAY ═══ -->
+<div class="overlay" id="overlay" style="display:none">
+<div class="wizard">
+  <div class="wiz-title">🖼 QuizPro 初始設定</div>
+  <div class="wiz-sub">只需設定一次，之後每天直接使用</div>
+
+  <div class="step-list">
+    <div class="step-card">
+      <h3><span class="step-dot">1</span> 建立 Firebase 專案（免費）</h3>
+      <ul>
+        <li>前往 <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a>，用 Google 帳號登入</li>
+        <li>點「新增專案」→ 輸入名稱（例如 <strong>quizpro</strong>）→ 按照步驟完成</li>
+        <li>在左側選「建構」→「Realtime Database」→「建立資料庫」</li>
+        <li>選擇地區（建議 us-central1）→ 規則選「<strong>以測試模式啟動</strong>」</li>
+      </ul>
+    </div>
+    <div class="step-card">
+      <h3><span class="step-dot">2</span> 取得設定碼</h3>
+      <ul>
+        <li>在 Firebase 主控台點齒輪 ⚙️ →「專案設定」</li>
+        <li>滑到下方「您的應用程式」→ 點網頁圖示（&lt;/&gt;）→ 輸入任意暱稱</li>
+        <li>複製 <code style="background:#f0f0e8;padding:2px 5px;border-radius:4px">firebaseConfig</code> 內的所有值，填入下方</li>
+      </ul>
+    </div>
+    <div class="step-card" style="background:#fff">
+      <h3><span class="step-dot">3</span> 填入 Firebase 設定</h3>
+      <div class="cfg-grid">
+        <div class="cfg-field"><label>apiKey</label><input id="c-apiKey" placeholder="AIza..."></div>
+        <div class="cfg-field"><label>authDomain</label><input id="c-authDomain" placeholder="xxx.firebaseapp.com"></div>
+        <div class="cfg-field full"><label>databaseURL</label><input id="c-databaseURL" placeholder="https://xxx-default-rtdb.firebaseio.com"></div>
+        <div class="cfg-field"><label>projectId</label><input id="c-projectId" placeholder="my-project-id"></div>
+        <div class="cfg-field"><label>storageBucket</label><input id="c-storageBucket" placeholder="xxx.appspot.com"></div>
+        <div class="cfg-field"><label>messagingSenderId</label><input id="c-messagingSenderId" placeholder="123456789"></div>
+        <div class="cfg-field full"><label>appId</label><input id="c-appId" placeholder="1:xxx:web:xxx"></div>
+      </div>
+      <div class="connection-status" id="connStatus"></div>
+    </div>
+  </div>
+
+  <div class="wiz-actions">
+    <button class="btn btn-g btn-sm" onclick="skipSetup()" id="skipBtn" style="display:none">暫時跳過（使用本機模式）</button>
+    <button class="btn btn-p" onclick="saveConfig()" id="saveConfigBtn">儲存並連線測試 →</button>
+  </div>
+</div>
+</div>
+
+<!-- ═══ TOPBAR ═══ -->
+<div class="topbar">
+  <div class="logo">🖼 Quiz<em>Pro</em> <small>DAILY</small></div>
+  <div class="tabs">
+    <button class="tab" onclick="goTab('teacher',this)" id="tab-teacher">老師出題</button>
+    <button class="tab on" onclick="goTab('student',this)" id="tab-student">學生作答</button>
+    <button class="tab" onclick="goTab('stats',this)" id="tab-stats">統計分析</button>
+    <button class="tab" onclick="goTab('history',this)" id="tab-history">歷史紀錄</button>
+    <button class="tab" id="admin-tab" onclick="openSetup()" style="display:none">⚙ 設定</button>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- ═══ TEACHER ═══ -->
+<div class="panel" id="panel-teacher">
+  <div class="card">
+    <div class="card-title"><span class="step-dot">1</span>上傳五張題目圖片</div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileIn').click()" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)">
+      <input type="file" id="fileIn" multiple accept="image/*" style="display:none" onchange="handleFiles(this.files)">
+      <div style="font-size:36px;margin-bottom:8px">🖼</div>
+      <div style="font-size:14px;font-weight:700;color:var(--ink)">拖曳圖片到這裡，或點擊選取</div>
+      <div style="font-size:12px;color:var(--ink3);margin-top:4px">最多 5 張 · JPG / PNG / WebP（自動壓縮）</div>
+    </div>
+    <div class="img-grid" id="imgGrid"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="step-dot">2</span>點選每題正確答案</div>
+    <div class="ans-grid" id="ansGrid"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="step-dot">3</span>學生名單<span style="font-size:11px;color:var(--ink3);font-weight:400;margin-left:6px">（名單會隨測驗保存，下次可繼續用）</span></div>
+    <div class="stu-list" id="stuList"></div>
+    <button class="btn-add" onclick="addStu()">＋ 新增學生</button>
+  </div>
+
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <div style="flex-direction:column;display:flex;gap:6px;flex:1;min-width:200px">
+      <label class="lbl">本次測驗標題（必填）</label>
+      <input class="fi" id="quizTitle" placeholder="例：第三週單字測驗">
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn btn-p" onclick="publish()" id="pubBtn">🚀 立即發布</button>
+    <button class="btn btn-g" onclick="saveDraft()" id="draftBtn">📋 儲存草稿</button>
+    <button class="btn btn-g btn-sm" onclick="resetQuiz()">清除重設</button>
+  </div>
+  <div id="pubStatus" style="display:none" class="status-bar sb-green"></div>
+  <div style="display:none;margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center" id="retakeRow">
+    <button class="btn btn-g btn-sm" onclick="resetAllResponses()" style="border-color:#b83232;color:#b83232">🔄 清除所有成績，讓全班重考</button>
+    <span style="font-size:12px;color:var(--ink3)">清除後學生可重新作答同一份測驗</span>
+  </div>
+  <div style="font-size:12px;color:var(--ink3);margin-top:8px">「立即發布」讓學生馬上作答；「儲存草稿」先存起來，之後再啟用。</div>
+
+  <!-- DRAFT LIST -->
+  <div class="card" style="margin-top:20px">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span><span class="step-dot" style="background:#888">📋</span> 草稿庫</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="draft-count" style="font-size:12px;color:var(--ink3)">載入中…</span>
+        <button onclick="loadDrafts()" style="font-size:12px;border:1px solid var(--bdr2);background:var(--surf2);border-radius:6px;padding:3px 9px;cursor:pointer;color:var(--ink2)">↻ 重新載入</button>
+      </div>
+    </div>
+    <div id="draft-list">
+      <div style="text-align:center;padding:24px;color:var(--ink3);font-size:13px">還沒有草稿</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ STUDENT ═══ -->
+<div class="panel on" id="panel-student">
+  <div id="sv-pick">
+    <div class="sv-wrap">
+      <div class="hero"><h1>👋 開始作答</h1><p id="quiz-title-disp">請選擇你的名字</p></div>
+      <div id="sv-locked" style="display:none" class="empty">
+        <div class="empty-icon">🔒</div>
+        <div class="empty-title">老師尚未發布測驗</div>
+        <div class="empty-hint">請老師先到「老師出題」頁面完成設定並發布</div>
+      </div>
+      <div id="sv-form">
+        <select class="sel-big" id="stuSel" onchange="onStuChange()">
+          <option value="">── 請選擇你的名字 ──</option>
+        </select>
+        <div id="sv-already" style="display:none" class="status-bar sb-amb" style="margin-bottom:10px">✅ 你已完成作答，無法重複測驗</div>
+        <button class="btn btn-p" style="width:100%;justify-content:center;padding:14px;font-size:15px" onclick="startQuiz()" id="startBtn" disabled>開始作答 →</button>
+      </div>
+    </div>
+  </div>
+  <div id="sv-quiz" style="display:none;max-width:520px;margin:0 auto">
+    <div class="q-progress">
+      <div class="prog-dots" id="progDots"></div>
+      <div class="prog-lbl" id="progLbl">1 / 5</div>
+    </div>
+    <div style="font-size:12px;color:var(--ink3);font-weight:600;margin-bottom:4px" id="sv-who"></div>
+    <div class="q-img" id="qImg"></div>
+    <div class="abcd" id="abcd"></div>
+    <div class="fb" id="fb"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px">
+      <button class="btn btn-p" id="confBtn" onclick="confirmAns()" style="display:none">確認答案</button>
+      <button class="btn btn-p" id="nxtBtn" onclick="nextQ()" style="display:none">下一題 →</button>
+      <button class="btn btn-p" id="subBtn" onclick="submitQuiz()" style="display:none">提交測驗 ✓</button>
+    </div>
+  </div>
+  <div id="sv-result" style="display:none;max-width:520px;margin:0 auto"></div>
+</div>
+
+<!-- ═══ STATS ═══ -->
+<div class="panel" id="panel-stats">
+  <div id="stats-empty" class="empty">
+    <div class="empty-icon">📊</div>
+    <div class="empty-title">尚無作答資料</div>
+    <div class="empty-hint">學生完成作答後，統計結果會出現在這裡</div>
+  </div>
+  <div id="stats-live" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:12px;color:var(--ink3)">自動更新 · 每 5 秒</div>
+      <div class="pulse pulse-g" style="display:inline-block"></div>
+    </div>
+    <div id="stats-content"></div>
+  </div>
+</div>
+
+<!-- ═══ HISTORY ═══ -->
+<div class="panel" id="panel-history">
+  <div class="card">
+    <div class="card-title">📋 歷史測驗紀錄</div>
+    <div id="hist-list">
+      <div class="empty" style="padding:32px 0">
+        <div class="empty-icon" style="font-size:32px">📂</div>
+        <div class="empty-hint">還沒有歷史紀錄</div>
+      </div>
+    </div>
+  </div>
+  <div id="hist-detail" style="display:none"></div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ════════════════════════════════════════
+// CONFIG & STATE
+// ════════════════════════════════════════
+var db = null;
+var CFG_KEY = 'qpro_firebase_config';
+var localMode = false;
+
+var L = {
+  images:[null,null,null,null,null],
+  answers:['','','','',''],
+  students:[],
+  stuCtr:0
+};
+var SV = {name:'',qIdx:0,answers:[],sel:null,confirmed:false};
+var activeQuizId = null;
+var liveResponses = {};
+var statsInterval = null;
+var currentCfg = null;
+
+// ════════════════════════════════════════
+// FIREBASE INIT
+// ════════════════════════════════════════
+function initFirebase(cfg) {
+  try {
+    if(firebase.apps.length) firebase.apps[0].delete();
+    firebase.initializeApp(cfg);
+    db = firebase.database();
+    return true;
+  } catch(e) {
+    console.error('Firebase init error:', e);
+    return false;
+  }
+}
+
+async function testConnection() {
+  return new Promise((res) => {
+    if(!db) { res(false); return; }
+    const t = setTimeout(()=>res(false), 6000);
+    db.ref('.info/connected').once('value')
+      .then(snap=>{ clearTimeout(t); res(true); })
+      .catch(()=>{ clearTimeout(t); res(false); });
+  });
+}
+
+// ════════════════════════════════════════
+// SETUP WIZARD
+// ════════════════════════════════════════
+function openSetup() {
+  document.getElementById('overlay').style.display='flex';
+  document.getElementById('skipBtn').style.display='inline-flex';
+  if(currentCfg) {
+    ['apiKey','authDomain','databaseURL','projectId','storageBucket','messagingSenderId','appId'].forEach(k=>{
+      var el=document.getElementById('c-'+k);
+      if(el) el.value=currentCfg[k]||'';
+    });
+  }
+}
+function closeSetup() { document.getElementById('overlay').style.display='none'; }
+function skipSetup() { localMode=true; closeSetup(); }
+
+async function saveConfig() {
+  var btn = document.getElementById('saveConfigBtn');
+  var fields = ['apiKey','authDomain','databaseURL','projectId','storageBucket','messagingSenderId','appId'];
+  var cfg = {};
+  var empty = false;
+  fields.forEach(k=>{ var v=document.getElementById('c-'+k).value.trim(); if(v) cfg[k]=v; else empty=true; });
+  if(Object.keys(cfg).length < 4) { showConnStatus('請至少填入 apiKey、authDomain、databaseURL、projectId','error'); return; }
+  if(!cfg.databaseURL) { showConnStatus('請填入 databaseURL（https://xxx.firebaseio.com 格式）','error'); return; }
+  btn.innerHTML='<span class="spinner"></span> 測試連線中…';
+  btn.disabled=true;
+  var ok = initFirebase(cfg);
+  if(ok) ok = await testConnection();
+  btn.innerHTML='儲存並連線測試 →'; btn.disabled=false;
+  if(ok) {
+    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    currentCfg = cfg;
+    showConnStatus('✅ 連線成功！設定已儲存。','success');
+    setTimeout(()=>{ closeSetup(); loadActiveQuiz(); }, 1200);
+  } else {
+    showConnStatus('❌ 連線失敗，請確認 databaseURL 是否正確，或 Firebase 規則是否允許讀寫','error');
+  }
+}
+
+function showConnStatus(msg, type) {
+  var el = document.getElementById('connStatus');
+  el.style.display = 'block';
+  el.textContent = msg;
+  el.className = 'connection-status ' + (type==='success'?'sb-green':type==='error'?'sb-red':'sb-amb');
+}
+
+// ════════════════════════════════════════
+// IMAGE HANDLING
+// ════════════════════════════════════════
+function doDrag(e, over) { e.preventDefault(); document.getElementById('dropZone').classList.toggle('over',over); }
+function doDrop(e) { e.preventDefault(); doDrag(e,false); handleFiles(e.dataTransfer.files); }
+
+async function handleFiles(files) {
+  var arr = Array.from(files).filter(f=>f.type.startsWith('image/')).slice(0,5);
+  for(var f of arr) {
+    var idx = L.images.indexOf(null);
+    if(idx===-1) break;
+    var url = await readFile(f);
+    L.images[idx] = await resizeImg(url, 720);
+    renderImgGrid();
+  }
+}
+function readFile(f){return new Promise(r=>{var rd=new FileReader();rd.onload=e=>r(e.target.result);rd.readAsDataURL(f)})}
+function resizeImg(url,max){
+  return new Promise(r=>{
+    var img=new Image();
+    img.onload=()=>{
+      var s=Math.min(1,max/Math.max(img.width,img.height,1));
+      var c=document.createElement('canvas');
+      c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      r(c.toDataURL('image/jpeg',.8));
+    };
+    img.src=url;
+  });
+}
+function removeImg(i){L.images[i]=null;renderImgGrid()}
+function renderImgGrid(){
+  var g=document.getElementById('imgGrid'); g.innerHTML='';
+  L.images.forEach((img,i)=>{
+    var sl=document.createElement('div');
+    sl.className='img-slot'+(img?' filled':'');
+    sl.innerHTML=img
+      ?`<img src="${img}"><button class="del-img" onclick="removeImg(${i});event.stopPropagation()">✕</button>`
+      :`<div class="slot-ph"><b>${i+1}</b><small>題${i+1}</small></div>`;
+    g.appendChild(sl);
+  });
+}
+
+// ════════════════════════════════════════
+// ANSWER GRID
+// ════════════════════════════════════════
+function setAns(i,v){L.answers[i]=v;renderAnsGrid()}
+function renderAnsGrid(){
+  var g=document.getElementById('ansGrid'); g.innerHTML='';
+  for(var i=0;i<5;i++){
+    var col=document.createElement('div'); col.className='ans-col';
+    col.innerHTML=`<div class="ans-lbl">題 ${i+1}</div><div class="choice-set">`+
+      ['A','B','C','D'].map(o=>`<button class="choice-opt${L.answers[i]===o?' sel':''}" onclick="setAns(${i},'${o}')">${o}</button>`).join('')+`</div>`;
+    g.appendChild(col);
+  }
+}
+
+// ════════════════════════════════════════
+// STUDENT LIST
+// ════════════════════════════════════════
+function addStu(name){
+  L.stuCtr++;
+  L.students.push({id:'s'+L.stuCtr, name:name||''});
+  renderStuList();
+}
+function removeStu(id){L.students=L.students.filter(s=>s.id!==id);renderStuList()}
+function renderStuList(){
+  var el=document.getElementById('stuList'); el.innerHTML='';
+  L.students.forEach((s,i)=>{
+    var row=document.createElement('div'); row.className='stu-row';
+    row.innerHTML=`<div class="stu-num">${i+1}</div>`+
+      `<input class="fi fi-sm" value="${esc(s.name)}" placeholder="學生姓名" oninput="L.students.find(x=>x.id==='${s.id}').name=this.value.trim()">`+
+      `<button class="stu-del" onclick="removeStu('${s.id}')">✕</button>`;
+    el.appendChild(row);
+  });
+}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// ════════════════════════════════════════
+// PUBLISH
+// ════════════════════════════════════════
+async function publish(){
+  var names = L.students.map(s=>s.name).filter(n=>n);
+  if(!L.answers.some(a=>a)){alert('請先設定至少一題的正確答案！');return}
+  if(!names.length){alert('請先新增至少一位學生！');return}
+  var btn=document.getElementById('pubBtn');
+  btn.innerHTML='<span class="spinner"></span> 發布中…'; btn.disabled=true;
+
+  var title = document.getElementById('quizTitle').value.trim() || formatDate(new Date())+' 測驗';
+  var qid = 'q_'+Date.now();
+  activeQuizId = qid;
+
+  var quizData = {
+    id:qid, title, date:formatDate(new Date()),
+    images:[...L.images], answers:[...L.answers], students:names,
+    published:true, ts:Date.now()
+  };
+
+  try {
+    if(db && !localMode){
+      await db.ref('quizpro/active').set(quizData);
+      await db.ref('quizpro/responses/'+qid).set({});
+      // save to history (without images to save space)
+      var histEntry={id:qid,title,date:formatDate(new Date()),students:names,answers:[...L.answers],ts:Date.now(),count:0};
+      await db.ref('quizpro/history/'+qid).set(histEntry);
+    }
+    var el=document.getElementById('pubStatus');
+    el.style.display='flex';
+    el.className='status-bar sb-green';
+    el.innerHTML=`<div class="pulse pulse-g"></div>測驗已發布！共 ${names.length} 位學生 · ${title}`;
+    liveResponses={};
+    startStatsPolling();
+    updateStatBadge(0);
+    document.getElementById('retakeRow').style.display='flex';
+  } catch(e) {
+    alert('發布失敗：'+e.message);
+  }
+  btn.innerHTML='🚀 發布測驗'; btn.disabled=false;
+}
+
+async function resetAllResponses(){
+  if(!confirm('確定要清除全班成績，讓所有人重新作答這份測驗嗎？此動作無法復原！')) return;
+  if(!activeQuizId){alert('目前沒有進行中的測驗');return}
+  try{
+    if(db&&!localMode){
+      await db.ref('quizpro/responses/'+activeQuizId).set({});
+      await db.ref('quizpro/history/'+activeQuizId+'/count').set(0);
+    }
+    liveResponses={};
+    updateStatBadge(0);
+    var el=document.getElementById('pubStatus');
+    el.style.display='flex'; el.className='status-bar sb-green';
+    el.innerHTML='<div class="pulse pulse-g"></div>✅ 全班成績已清除！學生可以重新作答了。';
+  }catch(e){alert('清除失敗：'+e.message)}
+}
+
+function resetQuiz(){
+  if(!confirm('清除本次設定並重新出題？')) return;
+  L.images=[null,null,null,null,null];
+  L.answers=['','','','',''];
+  document.getElementById('quizTitle').value='';
+  document.getElementById('pubStatus').style.display='none';
+  renderImgGrid(); renderAnsGrid();
+  renderDraftList();
+}
+
+// ════════════════════════════════════════
+// DRAFT SYSTEM
+// ════════════════════════════════════════
+async function saveDraft(){
+  document.querySelectorAll('#stuList .fi').forEach(function(inp,i){
+    if(L.students[i]) L.students[i].name=inp.value.trim();
+  });
+  var names=L.students.map(function(s){return s.name}).filter(function(n){return n});
+  var title=document.getElementById('quizTitle').value.trim();
+  if(!title){alert('請先填入測驗標題！');document.getElementById('quizTitle').focus();return}
+  if(!L.answers.some(function(a){return a})){alert('請先設定至少一題答案！');return}
+  if(!names.length){alert('請先新增至少一位學生！');return}
+
+  var btn=document.getElementById('draftBtn');
+  btn.innerHTML='儲存中…';btn.disabled=true;
+
+  var did='d_'+Date.now();
+  var draft={
+    id:did,
+    title:title,
+    date:formatDate(new Date()),
+    images:L.images.slice(),
+    answers:L.answers.slice(),
+    students:names,
+    ts:Date.now()
+  };
+
+  // 1. Save metadata to localStorage (no images - avoid quota limit)
+  var metaDraft={id:did,title:title,date:formatDate(new Date()),
+    answers:L.answers.slice(),students:names,ts:Date.now()};
+  try{
+    var localDrafts=getDraftsLocal();
+    localDrafts[did]=metaDraft;
+    localStorage.setItem('qpro_drafts', JSON.stringify(localDrafts));
+  }catch(e){ console.log('localStorage error:',e); }
+
+  // 2. Save full draft (with images) to Firebase
+  if(db && !localMode){
+    try{ await db.ref('quizpro/drafts/'+did).set(draft); }
+    catch(e){ console.log('Firebase draft save error:',e); }
+  }
+
+  var el=document.getElementById('pubStatus');
+  el.style.display='flex'; el.className='status-bar sb-green';
+  el.innerHTML='<div class="pulse pulse-g"></div>✅ 草稿「'+title+'」已儲存！';
+
+  btn.innerHTML='📋 儲存草稿'; btn.disabled=false;
+  renderDraftList();
+}
+
+function getDraftsLocal(){
+  try{ return JSON.parse(localStorage.getItem('qpro_drafts')||'{}'); }
+  catch(e){ return {}; }
+}
+
+async function loadDrafts(){
+  if(db && !localMode){
+    try{
+      var snap=await db.ref('quizpro/drafts').once('value');
+      var fbDrafts=snap.val()||{};
+      // Save metadata (no images) to localStorage
+      var meta={};
+      Object.keys(fbDrafts).forEach(function(k){
+        var d=fbDrafts[k];
+        meta[k]={id:d.id,title:d.title,date:d.date,
+          answers:d.answers,students:d.students,ts:d.ts};
+      });
+      var local=getDraftsLocal();
+      var merged=Object.assign({},local,meta);
+      localStorage.setItem('qpro_drafts', JSON.stringify(merged));
+    }catch(e){ console.log('loadDrafts firebase error:',e); }
+  }
+  renderDraftList();
+}
+
+function renderDraftList(){
+  var drafts=getDraftsLocal();
+  var items=Object.values(drafts).sort(function(a,b){return b.ts-a.ts});
+  var countEl=document.getElementById('draft-count');
+  var listEl=document.getElementById('draft-list');
+  if(!countEl||!listEl) return;
+
+  countEl.textContent=items.length ? items.length+' 個草稿' : '尚無草稿';
+
+  if(!items.length){
+    listEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--ink3);font-size:13px">還沒有草稿<br>填好圖片和答案後按「📋 儲存草稿」</div>';
+    return;
+  }
+
+  var html='';
+  items.forEach(function(d){
+    var isActive=activeQuizId && activeQuizId===d.id;
+    var imgs='';
+    (d.images||[]).forEach(function(img){
+      if(img) imgs+='<img src="'+img+'" style="width:34px;height:34px;object-fit:cover;border-radius:6px;border:1px solid #ddd">';
+    });
+    var badge=isActive ? '<span class="active-badge">進行中</span>' : '';
+    var actBtn=isActive
+      ? '<button style="padding:7px 14px;border-radius:8px;border:none;background:#aaa;color:#fff;font-size:13px;cursor:default">✓ 進行中</button>'
+      : '<button onclick="activateDraft(\''+d.id+'\')" style="padding:7px 14px;border-radius:8px;border:none;background:#1a6b52;color:#fff;font-size:13px;font-weight:600;cursor:pointer">▶ 啟用</button>';
+    var delBtn='<button onclick="deleteDraft(\''+d.id+'\')" style="padding:7px 10px;border-radius:8px;border:1px solid #ddd;background:#fff;font-size:13px;color:#888;cursor:pointer">✕</button>';
+    html+=
+      '<div class="draft-card">'+
+        '<div>'+
+          '<div class="draft-title">'+esc(d.title)+badge+'</div>'+
+          '<div class="draft-meta">'+(d.date||'')+' · '+(d.students||[]).length+'位學生 · '+(d.answers||[]).filter(Boolean).length+'題已設定</div>'+
+          '<div style="display:flex;gap:5px;margin-top:7px">'+imgs+'</div>'+
+        '</div>'+
+        '<div class="draft-actions">'+actBtn+delBtn+'</div>'+
+      '</div>';
+  });
+  listEl.innerHTML=html;
+}
+
+async function activateDraft(did){
+  // Always load full draft from Firebase (has images)
+  var draft=null;
+  if(db&&!localMode){
+    try{
+      var snap=await db.ref('quizpro/drafts/'+did).once('value');
+      draft=snap.val();
+    }catch(e){ console.log('Firebase load error:',e); }
+  }
+  // Fallback to localStorage (no images)
+  if(!draft){
+    var drafts=getDraftsLocal();
+    draft=drafts[did];
+  }
+  if(!draft){alert('找不到此草稿！');return}
+
+  var qid='q_'+Date.now();
+  activeQuizId=qid;
+  var quizData=Object.assign({},draft,{id:qid,published:true,ts:Date.now()});
+
+  if(db&&!localMode){
+    try{
+      await db.ref('quizpro/active').set(quizData);
+      await db.ref('quizpro/responses/'+qid).set({});
+      var hist={id:qid,title:draft.title,date:formatDate(new Date()),
+        students:draft.students,answers:draft.answers,ts:Date.now(),count:0};
+      await db.ref('quizpro/history/'+qid).set(hist);
+    }catch(e){alert('啟用失敗：'+e.message);return}
+  }
+
+  liveResponses={};
+  updateStatBadge(0);
+  startStatsPolling();
+
+  L.images=(draft.images||[null,null,null,null,null]).slice();
+  L.answers=(draft.answers||['','','','','']).slice();
+  L.students=(draft.students||[]).map(function(n,i){return{id:'d'+(i+1),name:n}});
+  L.stuCtr=L.students.length;
+  renderImgGrid();renderAnsGrid();renderStuList();
+  document.getElementById('quizTitle').value=draft.title||'';
+
+  var el=document.getElementById('pubStatus');
+  el.style.display='flex'; el.className='status-bar sb-green';
+  el.innerHTML='<div class="pulse pulse-g"></div>✅ 已啟用「'+esc(draft.title)+'」！學生現在可以作答了。';
+  document.getElementById('retakeRow').style.display='flex';
+  currentActiveQuiz=quizData;
+  renderDraftList();
+}
+
+async function deleteDraft(did){
+  var drafts=getDraftsLocal();
+  var title=(drafts[did]&&drafts[did].title)||'此草稿';
+  if(!confirm('確定要刪除「'+title+'」嗎？'))return;
+  delete drafts[did];
+  localStorage.setItem('qpro_drafts', JSON.stringify(drafts));
+  if(db&&!localMode){
+    try{ await db.ref('quizpro/drafts/'+did).remove(); }catch(e){}
+  }
+  renderDraftList();
+}
+
+
+// ════════════════════════════════════════
+// LOAD ACTIVE QUIZ
+// ════════════════════════════════════════
+async function loadActiveQuiz(){
+  if(!db||localMode) return;
+  try {
+    var snap = await db.ref('quizpro/active').once('value');
+    var data = snap.val();
+    if(data&&data.published){
+      currentActiveQuiz = data;
+      activeQuizId = data.id;
+      // restore to teacher UI
+      L.images=[...(data.images||[null,null,null,null,null])];
+      L.answers=[...(data.answers||['','','','',''])];
+      var names=data.students||[];
+      L.students=names.map((n,i)=>({id:'pre'+(i+1),name:n}));
+      L.stuCtr=L.students.length;
+      renderImgGrid(); renderAnsGrid(); renderStuList();
+      document.getElementById('quizTitle').value=data.title||'';
+      var el=document.getElementById('pubStatus');
+      el.style.display='flex'; el.className='status-bar sb-amb';
+      el.innerHTML=`<div class="pulse pulse-g"></div>已載入上次發布的測驗：${data.title||''}`;
+      // load responses
+      var rsnap = await db.ref('quizpro/responses/'+data.id).once('value');
+      liveResponses = rsnap.val()||{};
+      updateStatBadge(Object.keys(liveResponses).length);
+      startStatsPolling();
+    }
+  } catch(e){ console.log('loadActiveQuiz error',e); }
+}
+var currentActiveQuiz = null;
+
+// ════════════════════════════════════════
+// STUDENT PANEL
+// ════════════════════════════════════════
+async function initStudentPanel(){
+  document.getElementById('sv-pick').style.display='block';
+  document.getElementById('sv-quiz').style.display='none';
+  document.getElementById('sv-result').style.display='none';
+
+  var quiz = null;
+  if(db&&!localMode){
+    try{ var snap=await db.ref('quizpro/active').once('value'); quiz=snap.val(); }catch(e){}
+  }
+  if(!quiz&&currentActiveQuiz) quiz=currentActiveQuiz;
+
+  if(!quiz||!quiz.published){
+    document.getElementById('sv-locked').style.display='block';
+    document.getElementById('sv-form').style.display='none';
+    return;
+  }
+  currentActiveQuiz=quiz;
+  document.getElementById('sv-locked').style.display='none';
+  document.getElementById('sv-form').style.display='block';
+  document.getElementById('quiz-title-disp').textContent=quiz.title||'請選擇你的名字開始作答';
+
+  // load responses
+  if(db&&!localMode){
+    try{ var rs=await db.ref('quizpro/responses/'+quiz.id).once('value'); liveResponses=rs.val()||{}; }catch(e){}
+  }
+
+  var sel=document.getElementById('stuSel');
+  sel.innerHTML='<option value="">── 請選擇你的名字 ──</option>';
+  (quiz.students||[]).forEach(n=>{
+    var o=document.createElement('option');
+    o.value=n; o.textContent=n+(liveResponses[safeName(n)]?' ✓':'');
+    sel.appendChild(o);
+  });
+  document.getElementById('startBtn').disabled=true;
+  document.getElementById('sv-already').style.display='none';
+}
+
+function onStuChange(){
+  var v=document.getElementById('stuSel').value;
+  var done=v&&liveResponses[safeName(v)];
+  document.getElementById('startBtn').disabled=!v||!!done;
+  document.getElementById('sv-already').style.display=done?'flex':'none';
+}
+
+function startQuiz(){
+  var name=document.getElementById('stuSel').value;
+  if(!name) return;
+  SV={name,qIdx:0,answers:[],sel:null,confirmed:false};
+  document.getElementById('sv-pick').style.display='none';
+  document.getElementById('sv-result').style.display='none';
+  document.getElementById('sv-quiz').style.display='block';
+  buildDots(); showQ(0);
+}
+
+function buildDots(){
+  var el=document.getElementById('progDots'); el.innerHTML='';
+  for(var i=0;i<5;i++){var d=document.createElement('div');d.className='pdot';d.id='pd'+i;el.appendChild(d)}
+}
+function updateDots(cur){
+  for(var i=0;i<5;i++){var d=document.getElementById('pd'+i);if(d)d.className='pdot'+(i<cur?' done':i===cur?' cur':'')}
+  document.getElementById('progLbl').textContent=(cur+1)+' / 5';
+}
+
+function showQ(idx){
+  SV.qIdx=idx; SV.sel=null; SV.confirmed=false;
+  updateDots(idx);
+  document.getElementById('sv-who').textContent=SV.name;
+  var quiz=currentActiveQuiz;
+  var img=quiz?.images?.[idx];
+  document.getElementById('qImg').innerHTML=img?`<img src="${img}" alt="題目">`:`<div class="no-img">（此題未上傳圖片）</div>`;
+  var abcd=document.getElementById('abcd');
+  abcd.innerHTML=['A','B','C','D'].map(o=>`<button class="aBtn" id="ab${o}" onclick="pickOpt('${o}')">${o}</button>`).join('');
+  var fb=document.getElementById('fb'); fb.className='fb'; fb.innerHTML='';
+  document.getElementById('confBtn').style.display='inline-flex';
+  document.getElementById('nxtBtn').style.display='none';
+  document.getElementById('subBtn').style.display='none';
+}
+
+function pickOpt(v){
+  if(SV.confirmed) return;
+  SV.sel=v;
+  ['A','B','C','D'].forEach(o=>document.getElementById('ab'+o).className='aBtn'+(o===v?' sel':''));
+}
+
+function confirmAns(){
+  if(!SV.sel){alert('請先選擇答案！');return}
+  SV.confirmed=true;
+  var correct=(currentActiveQuiz?.answers?.[SV.qIdx]||'').toUpperCase();
+  var ok=SV.sel===correct;
+  SV.answers[SV.qIdx]={given:SV.sel,correct,ok};
+  ['A','B','C','D'].forEach(o=>{
+    var b=document.getElementById('ab'+o); b.disabled=true;
+    if(o===SV.sel) b.className='aBtn sel';
+    else b.className='aBtn';
+  });
+  document.getElementById('confBtn').style.display='none';
+  if(SV.qIdx<4) document.getElementById('nxtBtn').style.display='inline-flex';
+  else document.getElementById('subBtn').style.display='inline-flex';
+}
+
+function nextQ(){showQ(SV.qIdx+1)}
+
+async function submitQuiz(){
+  var score=SV.answers.filter(a=>a&&a.ok).length;
+  var rec={score,details:SV.answers.slice(),ts:Date.now()};
+  if(db&&!localMode&&activeQuizId){
+    try{
+      await db.ref('quizpro/responses/'+activeQuizId+'/'+safeName(SV.name)).set(rec);
+      // update history count
+      var resp=await db.ref('quizpro/responses/'+activeQuizId).once('value');
+      var cnt=Object.keys(resp.val()||{}).length;
+      await db.ref('quizpro/history/'+activeQuizId+'/count').set(cnt);
+    }catch(e){console.log('submit error',e)}
+  }
+  liveResponses[safeName(SV.name)]=rec;
+  updateStatBadge(Object.keys(liveResponses).length);
+  showResult(SV.name);
+}
+
+function showResult(name){
+  document.getElementById('sv-quiz').style.display='none';
+  document.getElementById('sv-pick').style.display='none';
+  var area=document.getElementById('sv-result'); area.style.display='block';
+  var rec=liveResponses[safeName(name)];
+  if(!rec) return;
+  var pct=Math.round(rec.score/5*100);
+  var col=rec.score===5?'var(--pri)':rec.score>=3?'var(--amb)':'var(--red)';
+  var msg=rec.score===5?'🎉 全對！太厲害了！':rec.score>=3?'👍 答得不錯！':'💪 繼續加油！';
+  area.innerHTML=`
+    <div class="card res-hero">
+      <div style="font-size:14px;color:var(--ink3);margin-bottom:8px">${esc(name)}</div>
+      <div class="big-num" style="color:${col}">${rec.score}<span style="font-size:30px;color:var(--ink3)">/5</span></div>
+      <div style="font-size:15px;font-weight:600;margin-top:10px;color:${col}">${msg}</div>
+      <div style="font-size:13px;color:var(--ink3);margin-top:6px">答題完成，感謝作答！</div>
+    </div>
+    <button class="btn btn-g btn-sm" onclick="initStudentPanel()" style="margin-top:4px">← 換人作答</button>`;
+}
+
+function updateStatBadge(n){
+  var el=document.getElementById('tab-stats');
+  el.innerHTML=n>0?`統計分析 <span class="badge">${n}</span>`:'統計分析';
+}
+
+function startStatsPolling(){
+  if(statsInterval) clearInterval(statsInterval);
+  statsInterval=setInterval(async()=>{
+    if(!db||!activeQuizId||localMode) return;
+    try{
+      var snap=await db.ref('quizpro/responses/'+activeQuizId).once('value');
+      var d=snap.val()||{}; liveResponses=d;
+      updateStatBadge(Object.keys(d).length);
+      if(document.getElementById('panel-stats').classList.contains('on')) renderStats();
+    }catch(e){}
+  },5000);
+}
+
+function buildStatsHTML(responses, quiz){
+  var names=Object.keys(responses);
+  if(!names.length) return null;
+  var students=quiz?.students||[];
+  var total=names.reduce(function(s,k){return s+responses[k].score},0);
+  var avg=(total/names.length).toFixed(1);
+  var errC=[0,0,0,0,0],errW=[[],[],[],[],[]];
+  names.forEach(function(k){
+    var displayName=students.find(function(s){return safeName(s)===k})||k;
+    (responses[k].details||[]).forEach(function(d,i){
+      if(d&&!d.ok){errC[i]++;errW[i].push(displayName)}
+    });
+  });
+  var hardest=errC.indexOf(Math.max(...errC));
+
+  // ── Summary cards ──
+  var cards='<div class="stat-cards">'+
+    '<div class="sc"><div class="num">'+names.length+'</div><div class="lbl">已作答人數</div></div>'+
+    '<div class="sc"><div class="num" style="color:var(--pri)">'+avg+'</div><div class="lbl">班級平均分</div></div>'+
+    '<div class="sc"><div class="num" style="color:var(--red)">題 '+(hardest+1)+'</div><div class="lbl">最多人答錯</div></div>'+
+  '</div>';
+
+  // ── Per-question choice analysis ──
+  var choiceRows='';
+  for(var qi=0;qi<5;qi++){
+    // Count each option A/B/C/D
+    var optCount={A:0,B:0,C:0,D:0};
+    var optWho={A:[],B:[],C:[],D:[]};
+    names.forEach(function(k){
+      var d=(responses[k].details||[])[qi];
+      if(d&&d.given){
+        var g=d.given.toUpperCase();
+        if(optCount[g]!==undefined){
+          optCount[g]++;
+          var displayName=students.find(function(s){return safeName(s)===k})||k;
+          optWho[g].push(displayName);
+        }
+      }
+    });
+    var correct=(quiz&&quiz.answers&&quiz.answers[qi]||'').toUpperCase();
+    var total_q=names.length||1;
+    var thumb=quiz&&quiz.images&&quiz.images[qi]
+      ?'<img src="'+quiz.images[qi]+'" onclick="showImgLightbox(this.src)" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:2px solid var(--pri-b);margin-right:12px;vertical-align:middle;cursor:zoom-in" title="點擊放大查看題目">'
+      :'';
+
+    var optHtml='';
+    ['A','B','C','D'].forEach(function(opt){
+      var cnt=optCount[opt];
+      var pct=Math.round(cnt/total_q*100);
+      var isCorrect=opt===correct;
+      var barColor=isCorrect?'var(--pri)':'var(--red)';
+      var labelStyle=isCorrect
+        ?'font-weight:700;color:var(--pri)'
+        :'color:var(--ink2)';
+      var whoHtml=optWho[opt].length
+        ?optWho[opt].map(function(n){
+            return '<span style="display:inline-block;background:'+(isCorrect?'var(--pri-l)':'var(--red-l)')+';color:'+(isCorrect?'var(--pri)':'var(--red)')+';border-radius:99px;padding:1px 8px;font-size:11px;margin:2px;font-weight:500">'+esc(n)+'</span>';
+          }).join('')
+        :'<span style="font-size:12px;color:var(--ink3)">無人選擇</span>';
+      optHtml+=
+        '<div style="margin-bottom:10px">'+
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
+            '<div style="width:24px;height:24px;border-radius:50%;background:'+(isCorrect?'var(--pri)':'var(--surf2)')+';color:'+(isCorrect?'#fff':'var(--ink2)')+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">'+opt+'</div>'+
+            '<div style="flex:1;height:10px;background:var(--surf2);border-radius:5px;overflow:hidden">'+
+              '<div style="height:100%;width:'+pct+'%;background:'+barColor+';border-radius:5px;transition:width .5s ease"></div>'+
+            '</div>'+
+            '<div style="font-size:13px;font-weight:700;min-width:36px;text-align:right;color:'+(isCorrect?'var(--pri)':'var(--ink2)')+'">'+pct+'%</div>'+
+            '<div style="font-size:12px;color:var(--ink3);min-width:28px">('+cnt+'人)</div>'+
+            (isCorrect?'<div style="font-size:11px;background:var(--pri-l);color:var(--pri);border-radius:4px;padding:1px 6px;font-weight:600">正解</div>':'')+
+          '</div>'+
+          '<div style="padding-left:32px">'+whoHtml+'</div>'+
+        '</div>';
+    });
+
+    choiceRows+=
+      '<div style="background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rad-lg);padding:18px;margin-bottom:12px;box-shadow:var(--sh)">'+
+        '<div style="display:flex;align-items:center;margin-bottom:14px">'+
+          thumb+
+          '<div>'+
+            '<div style="font-size:14px;font-weight:700">題目 '+(qi+1)+'</div>'+
+            '<div style="font-size:12px;color:var(--ink3)">正確答案：<strong style="color:var(--pri);font-family:monospace">'+correct+'</strong> · 錯誤率：<strong style="color:var(--red)">'+Math.round(errC[qi]/total_q*100)+'%</strong></div>'+
+          '</div>'+
+        '</div>'+
+        optHtml+
+      '</div>';
+  }
+  var choiceTable='<div class="card-title" style="margin-top:4px">選項分析（每題各選項人數與比例）</div>'+choiceRows;
+
+  // ── Personal scores ──
+  var prows=names.map(function(k){
+    var r=responses[k]; var s=r.score;
+    var displayName=students.find(function(st){return safeName(st)===k})||k;
+    var pc=s===5?'f':s>=3?'m':'l';
+    var dots=(r.details||[]).map(function(d,i){
+      return '<span class="'+(d.ok?'dot-ok':'dot-fail')+'" title="題'+(i+1)+':'+(d.given||'—')+'">'+(i+1)+'</span>';
+    }).join('');
+    return '<tr><td style="font-weight:600">'+esc(displayName)+'</td><td><span class="sp sp-'+pc+'">'+s+' / 5</span></td><td>'+Math.round(s/5*100)+'%</td><td>'+dots+'</td></tr>';
+  }).join('');
+  var ptable='<div class="card"><div class="card-title">個人成績</div>'+
+    '<table class="tbl"><thead><tr><th>姓名</th><th>分數</th><th>正確率</th><th>每題</th></tr></thead>'+
+    '<tbody>'+prows+'</tbody></table></div>';
+
+  return cards+'<div class="card">'+choiceTable+'</div>'+ptable;
+}
+
+function closeLightbox(){
+  var el=document.getElementById('img-lightbox');
+  if(el) el.remove();
+}
+function showImgLightbox(src){
+  closeLightbox();
+  var box=document.createElement('div');
+  box.id='img-lightbox';
+  box.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:998;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';
+  var inner=document.createElement('div');
+  inner.style.cssText='position:relative;max-width:90vw;max-height:90vh';
+  var img=document.createElement('img');
+  img.src=src;
+  img.style.cssText='max-width:90vw;max-height:85vh;object-fit:contain;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.5);display:block';
+  var closeBtn=document.createElement('button');
+  closeBtn.textContent='✕';
+  closeBtn.style.cssText='position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:50%;background:#fff;border:none;font-size:16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);font-weight:700;color:#333';
+  closeBtn.onclick=closeLightbox;
+  inner.appendChild(img);
+  inner.appendChild(closeBtn);
+  box.appendChild(inner);
+  box.onclick=function(e){ if(e.target===box) closeLightbox(); };
+  document.body.appendChild(box);
+}
+
+
+async function renderStats(){
+  var empty=document.getElementById('stats-empty');
+  var live=document.getElementById('stats-live');
+  var quiz=currentActiveQuiz;
+  if(!quiz) {
+    if(db&&!localMode){try{var s=await db.ref('quizpro/active').once('value');quiz=s.val();currentActiveQuiz=quiz;}catch(e){}}
+  }
+  if(!Object.keys(liveResponses).length){empty.style.display='block';live.style.display='none';return}
+  empty.style.display='none'; live.style.display='block';
+  var html=buildStatsHTML(liveResponses,quiz);
+  if(html) document.getElementById('stats-content').innerHTML=html;
+}
+
+// ════════════════════════════════════════
+// HISTORY
+// ════════════════════════════════════════
+async function renderHistory(){
+  if(!db||localMode){document.getElementById('hist-list').innerHTML='<div class="empty-hint" style="padding:20px;text-align:center;color:var(--ink3)">歷史紀錄需要 Firebase 連線</div>';return}
+  var snap=await db.ref('quizpro/history').orderByChild('ts').once('value');
+  var items=[]; snap.forEach(c=>items.unshift(c.val()));
+  if(!items.length){document.getElementById('hist-list').innerHTML='<div class="empty" style="padding:32px 0"><div class="empty-icon" style="font-size:32px">📂</div><div class="empty-hint">還沒有歷史紀錄</div></div>';return}
+  document.getElementById('hist-list').innerHTML=items.map(it=>`
+    <div class="hist-row" onclick="loadHistDetail('${it.id}')">
+      <div class="hist-date">${it.date||''}</div>
+      <div><div class="hist-title">${esc(it.title||'未命名測驗')}</div><div class="hist-sub">${(it.students||[]).length} 位學生</div></div>
+      <div class="hist-cnt">${it.count||0} 人已答</div>
+      <button class="hist-del-btn" onclick="delHist('${it.id}');event.stopPropagation()" title="刪除">✕</button>
+    </div>`).join('');
+}
+
+async function loadHistDetail(qid){
+  if(!db) return;
+  var area=document.getElementById('hist-detail');
+  area.style.display='block';
+  area.innerHTML='<div class="card" style="text-align:center;padding:24px;color:var(--ink3)">載入中…</div>';
+  area.scrollIntoView({behavior:'smooth',block:'start'});
+  try{
+    var qs=await db.ref('quizpro/history/'+qid).once('value');
+    var ht=qs.val();
+    var rs=await db.ref('quizpro/responses/'+qid).once('value');
+    var resp=rs.val()||{};
+    if(!Object.keys(resp).length){area.innerHTML=`<div class="card"><div class="card-title">📋 ${esc(ht?.title||'')}</div><div style="color:var(--ink3);font-size:13px;padding:16px 0">此次測驗無作答紀錄</div></div>`;return}
+    var html=buildStatsHTML(resp,ht);
+    area.innerHTML=`<div class="card"><div class="card-title">📋 ${esc(ht?.title||'')} · ${ht?.date||''}</div></div>`+(html||'');
+  }catch(e){area.innerHTML='<div class="card">載入失敗</div>'}
+}
+
+async function delHist(qid){
+  if(!confirm('確定要刪除這筆歷史紀錄嗎？')) return;
+  if(!db) return;
+  try{
+    await db.ref('quizpro/history/'+qid).remove();
+    await db.ref('quizpro/responses/'+qid).remove();
+    renderHistory();
+    document.getElementById('hist-detail').style.display='none';
+  }catch(e){alert('刪除失敗')}
+}
+
+// ════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════
+var teacherUnlocked = false;
+var TEACHER_PASSWORD = '0000';
+
+function goTab(id, el){
+  if((id==='stats'||id==='history'||id==='teacher') && !teacherUnlocked){
+    showPasswordModal(id, el);
+    return;
+  }
+  switchTab(id, el);
+}
+
+function switchTab(id, el){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('panel-'+id).classList.add('on');
+  if(el) el.classList.add('on');
+  if(id==='student') initStudentPanel();
+  if(id==='stats') renderStats();
+  if(id==='history') renderHistory();
+  if(id==='teacher'){
+    renderDraftList(); loadDrafts();
+    // auto-reload drafts every 4s while on teacher panel
+    if(window._draftInterval) clearInterval(window._draftInterval);
+    window._draftInterval=setInterval(function(){
+      if(document.getElementById('panel-teacher').classList.contains('on') && teacherUnlocked) loadDrafts();
+      else clearInterval(window._draftInterval);
+    },4000);
+  } else {
+    if(window._draftInterval) clearInterval(window._draftInterval);
+  }
+}
+
+function showPasswordModal(targetId, targetEl){
+  var existing = document.getElementById('pw-modal');
+  if(existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'pw-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+
+  var box = document.createElement('div');
+  box.style.cssText='background:#fff;border-radius:16px;padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2)';
+
+  box.innerHTML =
+    '<div style="font-size:28px;text-align:center;margin-bottom:8px">🔐</div>'+
+    '<div style="font-size:16px;font-weight:700;text-align:center;margin-bottom:4px">老師專區</div>'+
+    '<div style="font-size:13px;color:#999;text-align:center;margin-bottom:20px">統計分析與歷史紀錄需要密碼</div>'+
+    '<input id="pw-input" type="password" placeholder="請輸入老師密碼" style="width:100%;padding:11px 14px;border-radius:9px;border:1.5px solid #ddd;font-size:15px;font-family:inherit;outline:none;margin-bottom:10px;text-align:center;letter-spacing:.2em">'+
+    '<div id="pw-error" style="color:#b83232;font-size:13px;text-align:center;margin-bottom:10px;display:none">密碼錯誤，請再試一次</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px">'+
+      '<button id="pw-cancel-btn" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #ddd;background:#fff;font-size:14px;cursor:pointer;font-family:inherit">取消</button>'+
+      '<button id="pw-confirm-btn" style="flex:1;padding:10px;border-radius:9px;border:none;background:#1a6b52;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">確認</button>'+
+    '</div>'+
+    '<div style="padding-top:12px;border-top:1px solid #f0f0ea">'+
+      '<div style="font-size:11px;color:#bbb;text-align:center;margin-bottom:8px">變更老師密碼</div>'+
+      '<div style="display:flex;gap:6px">'+
+        '<input id="pw-new" type="password" placeholder="輸入新密碼" style="flex:1;padding:8px 10px;border-radius:8px;border:1.5px solid #ddd;font-size:13px;font-family:inherit;outline:none">'+
+        '<button id="pw-change-btn" style="padding:8px 12px;border-radius:8px;border:1.5px solid #ddd;background:#fff;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap">變更</button>'+
+      '</div>'+
+      '<div id="pw-change-msg" style="font-size:12px;text-align:center;margin-top:6px;display:none"></div>'+
+    '</div>'+
+    '<div id="pw-emergency" style="display:none;margin-top:10px;text-align:center">'+
+      '<button id="pw-emergency-btn" style="font-size:12px;color:#b06000;background:none;border:none;cursor:pointer;text-decoration:underline">🔑 緊急重設密碼</button>'+
+    '</div>';
+
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+
+  document.getElementById('pw-input').onkeydown = function(e){ if(e.key==='Enter') checkPassword(); };
+  document.getElementById('pw-cancel-btn').onclick = function(){ document.getElementById('pw-modal').remove(); };
+  document.getElementById('pw-confirm-btn').onclick = checkPassword;
+  document.getElementById('pw-change-btn').onclick = changePassword;
+  document.getElementById('pw-emergency-btn').onclick = emergencyReset;
+
+  setTimeout(function(){ document.getElementById('pw-input').focus(); }, 100);
+  window._pwTarget = {id: targetId, el: targetEl};
+}
+
+function checkPassword(){
+  var saved = localStorage.getItem('qpro_teacher_pw') || TEACHER_PASSWORD;
+  var input = document.getElementById('pw-input').value;
+  if(input === saved){
+    _pwFailCount = 0;
+    teacherUnlocked = true;
+    document.getElementById('pw-modal').remove();
+    var t = window._pwTarget;
+    switchTab(t.id, t.el);
+    if(t.id==='teacher'){ renderDraftList(); loadDrafts(); }
+  } else {
+    _pwFailCount++;
+    document.getElementById('pw-input').value='';
+    document.getElementById('pw-input').focus();
+    if(_pwFailCount >= 3){
+      document.getElementById('pw-error').textContent='密碼錯誤 3 次，可使用下方「緊急重設」';
+      document.getElementById('pw-emergency').style.display='block';
+    } else {
+      document.getElementById('pw-error').textContent='密碼錯誤，請再試一次（'+_pwFailCount+'/3）';
+    }
+    document.getElementById('pw-error').style.display='block';
+  }
+}
+function emergencyReset(){
+  var code = prompt('請輸入緊急重設碼：');
+  if(code === 'RESET2024'){
+    localStorage.removeItem('qpro_teacher_pw');
+    _pwFailCount = 0;
+    document.getElementById('pw-error').style.display='none';
+    document.getElementById('pw-emergency').style.display='none';
+    document.getElementById('pw-input').placeholder='密碼已重設，請輸入 0000';
+    document.getElementById('pw-input').focus();
+  } else {
+    alert('重設碼錯誤！');
+  }
+}
+
+function changePassword(){
+  var newPw = document.getElementById('pw-new').value.trim();
+  var msg = document.getElementById('pw-change-msg');
+  if(!newPw){ msg.style.display='block'; msg.style.color='#b83232'; msg.textContent='請輸入新密碼'; return; }
+  localStorage.setItem('qpro_teacher_pw', newPw);
+  msg.style.display='block'; msg.style.color='#1a6b52'; msg.textContent='✓ 密碼已變更！';
+  document.getElementById('pw-new').value='';
+}
+
+// ════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════
+function safeName(n){return(n||'').replace(/[.#$\/\[\]\s]/g,'_')}
+function formatDate(d){return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0')}
+
+// ════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════
+(async function init(){
+  renderImgGrid(); renderAnsGrid();
+  [
+    '1 楊誠安','2 江柏彥','3 施宥安','4 汪碩澄','5 蔡宗祐',
+    '6 陳宥勳','7 吳承軒','8 韓宥能','9 林鉑鎬','10 陳暘皓',
+    '11 吳芠𥠹','12 杜修語','13 陳廷祐','14 陳柏丞','15 洪莞喻',
+    '16 王筱雯','17 楊喬羽','18 孫妤婕','19 陳亭嫣','20 鍾瑀芯',
+    '21 吳芠稹','22 陳品如','23 簡佩莀','24 洪貝瑄','25 林芷琦'
+  ].forEach(n=>addStu(n));
+  // 顯示管理員按鈕（網址含 ?admin 才顯示）
+  if(location.search.includes('admin') || location.hash.includes('admin')){
+    var ab = document.getElementById('admin-tab');
+    if(ab) ab.style.display='inline-block';
+  }  // 內建 Firebase 設定，學生打開不會看到設定畫面
+  var builtInCfg = {
+    apiKey: "AIzaSyB3MFkf8vx5gYpVsp3wHm5FUOo5ewa8bdk",
+    authDomain: "quiz-db3d2.firebaseapp.com",
+    databaseURL: "https://quiz-db3d2-default-rtdb.firebaseio.com",
+    projectId: "quiz-db3d2",
+    storageBucket: "quiz-db3d2.firebasestorage.app",
+    messagingSenderId: "169436596004",
+    appId: "1:169436596004:web:618ddcb077f64e229a55b1"
+  };
+  var ok = initFirebase(builtInCfg);
+  currentCfg = builtInCfg;
+  localStorage.setItem(CFG_KEY, JSON.stringify(builtInCfg));
+  closeSetup();
+  if(ok) await loadActiveQuiz();
+  // 預設顯示學生作答頁面
+  initStudentPanel();
+})();
+</script>
+</body>
+</html>
