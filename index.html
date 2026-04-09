@@ -398,7 +398,7 @@ select.sel-big:focus{border-color:var(--pri)}
 // CONFIG & STATE
 // ════════════════════════════════════════
 var db = null;
-var CFG_KEY = 'qpro_firebase_config';
+var CFG_KEY = 'mathquiz_firebase_config';
 var localMode = false;
 
 var L = {
@@ -584,11 +584,11 @@ async function publish(){
 
   try {
     if(db && !localMode){
-      await db.ref('quizpro/active').set(quizData);
-      await db.ref('quizpro/responses/'+qid).set({});
+      await db.ref('mathquiz/active').set(quizData);
+      await db.ref('mathquiz/responses/'+qid).set({});
       // save to history (without images to save space)
       var histEntry={id:qid,title,date:formatDate(new Date()),students:names,answers:[...L.answers],ts:Date.now(),count:0};
-      await db.ref('quizpro/history/'+qid).set(histEntry);
+      await db.ref('mathquiz/history/'+qid).set(histEntry);
     }
     var el=document.getElementById('pubStatus');
     el.style.display='flex';
@@ -609,8 +609,8 @@ async function resetAllResponses(){
   if(!activeQuizId){alert('目前沒有進行中的測驗');return}
   try{
     if(db&&!localMode){
-      await db.ref('quizpro/responses/'+activeQuizId).set({});
-      await db.ref('quizpro/history/'+activeQuizId+'/count').set(0);
+      await db.ref('mathquiz/responses/'+activeQuizId).set({});
+      await db.ref('mathquiz/history/'+activeQuizId+'/count').set(0);
     }
     liveResponses={};
     updateStatBadge(0);
@@ -663,12 +663,12 @@ async function saveDraft(){
   try{
     var localDrafts=getDraftsLocal();
     localDrafts[did]=metaDraft;
-    localStorage.setItem('qpro_drafts', JSON.stringify(localDrafts));
+    localStorage.setItem('mathquiz_drafts', JSON.stringify(localDrafts));
   }catch(e){ console.log('localStorage error:',e); }
 
   // 2. Save full draft (with images) to Firebase
   if(db && !localMode){
-    try{ await db.ref('quizpro/drafts/'+did).set(draft); }
+    try{ await db.ref('mathquiz/drafts/'+did).set(draft); }
     catch(e){ console.log('Firebase draft save error:',e); }
   }
 
@@ -681,14 +681,14 @@ async function saveDraft(){
 }
 
 function getDraftsLocal(){
-  try{ return JSON.parse(localStorage.getItem('qpro_drafts')||'{}'); }
+  try{ return JSON.parse(localStorage.getItem('mathquiz_drafts')||'{}'); }
   catch(e){ return {}; }
 }
 
 async function loadDrafts(){
   if(db && !localMode){
     try{
-      var snap=await db.ref('quizpro/drafts').once('value');
+      var snap=await db.ref('mathquiz/drafts').once('value');
       var fbDrafts=snap.val()||{};
       // Save metadata (no images) to localStorage
       var meta={};
@@ -699,7 +699,7 @@ async function loadDrafts(){
       });
       var local=getDraftsLocal();
       var merged=Object.assign({},local,meta);
-      localStorage.setItem('qpro_drafts', JSON.stringify(merged));
+      localStorage.setItem('mathquiz_drafts', JSON.stringify(merged));
     }catch(e){ console.log('loadDrafts firebase error:',e); }
   }
   renderDraftList();
@@ -750,7 +750,7 @@ async function activateDraft(did){
   var draft=null;
   if(db&&!localMode){
     try{
-      var snap=await db.ref('quizpro/drafts/'+did).once('value');
+      var snap=await db.ref('mathquiz/drafts/'+did).once('value');
       draft=snap.val();
     }catch(e){ console.log('Firebase load error:',e); }
   }
@@ -767,11 +767,11 @@ async function activateDraft(did){
 
   if(db&&!localMode){
     try{
-      await db.ref('quizpro/active').set(quizData);
-      await db.ref('quizpro/responses/'+qid).set({});
+      await db.ref('mathquiz/active').set(quizData);
+      await db.ref('mathquiz/responses/'+qid).set({});
       var hist={id:qid,title:draft.title,date:formatDate(new Date()),
         students:draft.students,answers:draft.answers,ts:Date.now(),count:0};
-      await db.ref('quizpro/history/'+qid).set(hist);
+      await db.ref('mathquiz/history/'+qid).set(hist);
     }catch(e){alert('啟用失敗：'+e.message);return}
   }
 
@@ -797,10 +797,10 @@ async function activateDraft(did){
   if(localDrafts[did]){
     if(!localDrafts[did].quizIds) localDrafts[did].quizIds=[];
     localDrafts[did].quizIds.push(qid);
-    localStorage.setItem('qpro_drafts', JSON.stringify(localDrafts));
+    localStorage.setItem('mathquiz_drafts', JSON.stringify(localDrafts));
   }
   if(db&&!localMode){
-    try{ await db.ref('quizpro/drafts/'+did+'/quizIds').transaction(function(cur){ var a=cur||[]; a.push(qid); return a; }); }catch(e){}
+    try{ await db.ref('mathquiz/drafts/'+did+'/quizIds').transaction(function(cur){ var a=cur||[]; a.push(qid); return a; }); }catch(e){}
   }
 
   renderDraftList();
@@ -811,9 +811,9 @@ async function deleteDraft(did){
   var title=(drafts[did]&&drafts[did].title)||'此草稿';
   if(!confirm('確定要刪除「'+title+'」嗎？'))return;
   delete drafts[did];
-  localStorage.setItem('qpro_drafts', JSON.stringify(drafts));
+  localStorage.setItem('mathquiz_drafts', JSON.stringify(drafts));
   if(db&&!localMode){
-    try{ await db.ref('quizpro/drafts/'+did).remove(); }catch(e){}
+    try{ await db.ref('mathquiz/drafts/'+did).remove(); }catch(e){}
   }
   renderDraftList();
 }
@@ -825,7 +825,7 @@ async function deleteDraft(did){
 async function loadActiveQuiz(){
   if(!db||localMode) return;
   try {
-    var snap = await db.ref('quizpro/active').once('value');
+    var snap = await db.ref('mathquiz/active').once('value');
     var data = snap.val();
     if(data&&data.published){
       currentActiveQuiz = data;
@@ -842,7 +842,7 @@ async function loadActiveQuiz(){
       el.style.display='flex'; el.className='status-bar sb-amb';
       el.innerHTML=`<div class="pulse pulse-g"></div>已載入上次發布的測驗：${data.title||''}`;
       // load responses
-      var rsnap = await db.ref('quizpro/responses/'+data.id).once('value');
+      var rsnap = await db.ref('mathquiz/responses/'+data.id).once('value');
       liveResponses = rsnap.val()||{};
       updateStatBadge(Object.keys(liveResponses).length);
       startStatsPolling();
@@ -861,7 +861,7 @@ async function initStudentPanel(){
 
   var quiz = null;
   if(db&&!localMode){
-    try{ var snap=await db.ref('quizpro/active').once('value'); quiz=snap.val(); }catch(e){}
+    try{ var snap=await db.ref('mathquiz/active').once('value'); quiz=snap.val(); }catch(e){}
   }
   if(!quiz&&currentActiveQuiz) quiz=currentActiveQuiz;
 
@@ -877,7 +877,7 @@ async function initStudentPanel(){
 
   // load responses
   if(db&&!localMode){
-    try{ var rs=await db.ref('quizpro/responses/'+quiz.id).once('value'); liveResponses=rs.val()||{}; }catch(e){}
+    try{ var rs=await db.ref('mathquiz/responses/'+quiz.id).once('value'); liveResponses=rs.val()||{}; }catch(e){}
   }
 
   var sel=document.getElementById('stuSel');
@@ -961,11 +961,11 @@ async function submitQuiz(){
   var rec={score,details:SV.answers.slice(),ts:Date.now()};
   if(db&&!localMode&&activeQuizId){
     try{
-      await db.ref('quizpro/responses/'+activeQuizId+'/'+safeName(SV.name)).set(rec);
+      await db.ref('mathquiz/responses/'+activeQuizId+'/'+safeName(SV.name)).set(rec);
       // update history count
-      var resp=await db.ref('quizpro/responses/'+activeQuizId).once('value');
+      var resp=await db.ref('mathquiz/responses/'+activeQuizId).once('value');
       var cnt=Object.keys(resp.val()||{}).length;
-      await db.ref('quizpro/history/'+activeQuizId+'/count').set(cnt);
+      await db.ref('mathquiz/history/'+activeQuizId+'/count').set(cnt);
     }catch(e){console.log('submit error',e)}
   }
   liveResponses[safeName(SV.name)]=rec;
@@ -1000,8 +1000,8 @@ function updateStatBadge(n){
 async function deleteHistEntry(qid){
   if(!db||localMode) return;
   try{
-    await db.ref('quizpro/history/'+qid).remove();
-    await db.ref('quizpro/responses/'+qid).remove();
+    await db.ref('mathquiz/history/'+qid).remove();
+    await db.ref('mathquiz/responses/'+qid).remove();
     renderStats();
   }catch(e){ alert('刪除失敗：'+e.message); }
 }
@@ -1012,7 +1012,7 @@ function startStatsPolling(){
   statsInterval=setInterval(async()=>{
     if(!db||!activeQuizId||localMode) return;
     try{
-      var snap=await db.ref('quizpro/responses/'+activeQuizId).once('value');
+      var snap=await db.ref('mathquiz/responses/'+activeQuizId).once('value');
       var d=snap.val()||{}; liveResponses=d;
       updateStatBadge(Object.keys(d).length);
       if(document.getElementById('panel-stats').classList.contains('on')) renderStats();
@@ -1161,7 +1161,7 @@ async function showDraftStats(did){
   // Also load from Firebase for latest quizIds
   var quizIds=[];
   try{
-    var dsnap=await db.ref('quizpro/drafts/'+did).once('value');
+    var dsnap=await db.ref('mathquiz/drafts/'+did).once('value');
     var fbDraft=dsnap.val();
     if(fbDraft&&fbDraft.quizIds) quizIds=fbDraft.quizIds;
     else if(draft&&draft.quizIds) quizIds=draft.quizIds;
@@ -1173,7 +1173,7 @@ async function showDraftStats(did){
   // Also search history by title as fallback
   var matchIds=quizIds.slice();
   try{
-    var hsnap=await db.ref('quizpro/history').once('value');
+    var hsnap=await db.ref('mathquiz/history').once('value');
     var hist=hsnap.val()||{};
     Object.values(hist).forEach(function(h){
       if(h.title===draft.title && matchIds.indexOf(h.id)===-1) matchIds.push(h.id);
@@ -1184,10 +1184,10 @@ async function showDraftStats(did){
   var allRuns=[];
   for(var i=0;i<matchIds.length;i++){
     try{
-      var rsnap=await db.ref('quizpro/responses/'+matchIds[i]).once('value');
+      var rsnap=await db.ref('mathquiz/responses/'+matchIds[i]).once('value');
       var resp=rsnap.val()||{};
       if(Object.keys(resp).length){
-        var hsnap2=await db.ref('quizpro/history/'+matchIds[i]).once('value');
+        var hsnap2=await db.ref('mathquiz/history/'+matchIds[i]).once('value');
         var hdata=hsnap2.val()||{};
         allRuns.push({id:matchIds[i], date:hdata.date||'', resp:resp});
       }
@@ -1255,7 +1255,7 @@ async function showDraftStats(did){
     // Load full quiz with images from Firebase active or use draft
     var quizForStats=draft;
     try{
-      var asnap=await db.ref('quizpro/active').once('value');
+      var asnap=await db.ref('mathquiz/active').once('value');
       var aQuiz=asnap.val();
       if(aQuiz&&aQuiz.title===draft.title) quizForStats=aQuiz;
     }catch(e){}
@@ -1282,7 +1282,7 @@ async function renderStats(){
   }
   listEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--ink3);font-size:13px">載入中…</div>';
   try{
-    var snap=await db.ref('quizpro/history').orderByChild('ts').once('value');
+    var snap=await db.ref('mathquiz/history').orderByChild('ts').once('value');
     var items=[]; snap.forEach(function(c){ items.unshift(c.val()); });
     if(!items.length){
       listEl.innerHTML='<div style="text-align:center;padding:32px;color:var(--ink3)"><div style="font-size:32px;margin-bottom:8px">📭</div><div>尚無測驗紀錄<br>發布測驗後會出現在這裡</div></div>';
