@@ -748,6 +748,7 @@ function renderDraftList(){
       ? '<button style="padding:7px 14px;border-radius:8px;border:none;background:#aaa;color:#fff;font-size:13px;cursor:default">✓ 進行中</button>'
       : '<button onclick="activateDraft(\''+d.id+'\')" style="padding:7px 14px;border-radius:8px;border:none;background:#1a6b52;color:#fff;font-size:13px;font-weight:600;cursor:pointer">▶ 啟用</button>';
     var delBtn='<button onclick="deleteDraft(\''+d.id+'\')" style="padding:7px 10px;border-radius:8px;border:1px solid #ddd;background:#fff;font-size:13px;color:#888;cursor:pointer">✕</button>';
+    var statsBtn='<button onclick="showDraftStats(\'' + d.id + '\')" style="padding:7px 12px;border-radius:8px;border:1px solid var(--pri-b);background:var(--pri-l);color:var(--pri);font-size:13px;font-weight:500;cursor:pointer">📊 統計</button>';
     html+=
       '<div class="draft-card">'+
         '<div>'+
@@ -755,7 +756,7 @@ function renderDraftList(){
           '<div class="draft-meta">'+(d.date||'')+' · '+(d.students||[]).length+'位學生 · '+(d.answers||[]).filter(Boolean).length+'題已設定</div>'+
           '<div style="display:flex;gap:5px;margin-top:7px">'+imgs+'</div>'+
         '</div>'+
-        '<div class="draft-actions">'+actBtn+delBtn+'</div>'+
+        '<div class="draft-actions">'+statsBtn+actBtn+delBtn+'</div>'+
       '</div>';
   });
   listEl.innerHTML=html;
@@ -807,6 +808,18 @@ async function activateDraft(did){
   el.innerHTML='<div class="pulse pulse-g"></div>✅ 已啟用「'+esc(draft.title)+'」！學生現在可以作答了。';
   document.getElementById('retakeRow').style.display='flex';
   currentActiveQuiz=quizData;
+
+  // Store quizId back into draft so we can look up stats later
+  var localDrafts=getDraftsLocal();
+  if(localDrafts[did]){
+    if(!localDrafts[did].quizIds) localDrafts[did].quizIds=[];
+    localDrafts[did].quizIds.push(qid);
+    localStorage.setItem('qpro_drafts', JSON.stringify(localDrafts));
+  }
+  if(db&&!localMode){
+    try{ await db.ref('quizpro/drafts/'+did+'/quizIds').transaction(function(cur){ var a=cur||[]; a.push(qid); return a; }); }catch(e){}
+  }
+
   renderDraftList();
 }
 
@@ -1142,6 +1155,128 @@ function showImgLightbox(src){
   box.appendChild(inner);
   box.onclick=function(e){ if(e.target===box) closeLightbox(); };
   document.body.appendChild(box);
+}
+
+
+async function showDraftStats(did){
+  if(!db||localMode){ alert('需要 Firebase 連線'); return; }
+
+  // Get draft info
+  var localDrafts=getDraftsLocal();
+  var draft=localDrafts[did];
+
+  // Also load from Firebase for latest quizIds
+  var quizIds=[];
+  try{
+    var dsnap=await db.ref('quizpro/drafts/'+did).once('value');
+    var fbDraft=dsnap.val();
+    if(fbDraft&&fbDraft.quizIds) quizIds=fbDraft.quizIds;
+    else if(draft&&draft.quizIds) quizIds=draft.quizIds;
+    if(!draft&&fbDraft) draft=fbDraft;
+  }catch(e){}
+
+  if(!draft){ alert('找不到草稿資料'); return; }
+
+  // Also search history by title as fallback
+  var matchIds=quizIds.slice();
+  try{
+    var hsnap=await db.ref('quizpro/history').once('value');
+    var hist=hsnap.val()||{};
+    Object.values(hist).forEach(function(h){
+      if(h.title===draft.title && matchIds.indexOf(h.id)===-1) matchIds.push(h.id);
+    });
+  }catch(e){}
+
+  // Load all runs' responses
+  var allRuns=[];
+  for(var i=0;i<matchIds.length;i++){
+    try{
+      var rsnap=await db.ref('quizpro/responses/'+matchIds[i]).once('value');
+      var resp=rsnap.val()||{};
+      if(Object.keys(resp).length){
+        var hsnap2=await db.ref('quizpro/history/'+matchIds[i]).once('value');
+        var hdata=hsnap2.val()||{};
+        allRuns.push({id:matchIds[i], date:hdata.date||'', resp:resp});
+      }
+    }catch(e){}
+  }
+
+  // Build modal
+  var existing=document.getElementById('draft-stats-modal');
+  if(existing) existing.remove();
+
+  var modal=document.createElement('div');
+  modal.id='draft-stats-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:997;overflow-y:auto;padding:16px';
+  modal.onclick=function(e){ if(e.target===modal) modal.remove(); };
+
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--bg);border-radius:16px;max-width:840px;margin:0 auto;padding:24px;position:relative;min-height:200px';
+
+  // Close button
+  var closeBtn=document.createElement('button');
+  closeBtn.textContent='✕ 關閉';
+  closeBtn.style.cssText='position:sticky;float:right;top:0;padding:7px 16px;border-radius:8px;border:1px solid var(--bdr2);background:#fff;cursor:pointer;font-size:13px;font-family:inherit;z-index:2';
+  closeBtn.onclick=function(){ modal.remove(); };
+  box.appendChild(closeBtn);
+
+  // Title
+  var titleEl=document.createElement('div');
+  titleEl.style.cssText='font-size:17px;font-weight:700;margin-bottom:20px';
+  titleEl.textContent='📊 '+draft.title;
+  box.appendChild(titleEl);
+
+  if(!allRuns.length){
+    var empty=document.createElement('div');
+    empty.style.cssText='text-align:center;padding:48px;color:var(--ink3)';
+    empty.innerHTML='<div style="font-size:36px;margin-bottom:10px">📭</div><div style="font-size:14px">此測驗尚未發布或無學生作答紀錄</div>';
+    box.appendChild(empty);
+  } else {
+    // If multiple runs, show tabs
+    if(allRuns.length>1){
+      var tabsDiv=document.createElement('div');
+      tabsDiv.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--bdr);padding-bottom:12px';
+      allRuns.forEach(function(run,idx){
+        var tb=document.createElement('button');
+        tb.textContent=(idx===0?'最新：':'')+run.date+' ('+Object.keys(run.resp).length+'人)';
+        tb.dataset.runIdx=idx;
+        tb.style.cssText='padding:6px 14px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s;'+(idx===0?'background:var(--pri);color:#fff;border:none;font-weight:600':'background:#fff;color:var(--ink2);border:1px solid var(--bdr2)');
+        tb.onclick=function(){
+          var ri=parseInt(this.dataset.runIdx);
+          tabsDiv.querySelectorAll('button').forEach(function(b){
+            b.style.background=b===tb?'var(--pri)':'#fff';
+            b.style.color=b===tb?'#fff':'var(--ink2)';
+            b.style.border=b===tb?'none':'1px solid var(--bdr2)';
+            b.style.fontWeight=b===tb?'600':'400';
+          });
+          renderRunStats(statsArea, allRuns[ri].resp, draft);
+        };
+        tabsDiv.appendChild(tb);
+      });
+      box.appendChild(tabsDiv);
+    }
+
+    var statsArea=document.createElement('div');
+    box.appendChild(statsArea);
+
+    // Load full quiz with images from Firebase active or use draft
+    var quizForStats=draft;
+    try{
+      var asnap=await db.ref('quizpro/active').once('value');
+      var aQuiz=asnap.val();
+      if(aQuiz&&aQuiz.title===draft.title) quizForStats=aQuiz;
+    }catch(e){}
+
+    renderRunStats(statsArea, allRuns[0].resp, quizForStats);
+  }
+
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+}
+
+function renderRunStats(container, resp, quiz){
+  var html=buildStatsHTML(resp, quiz);
+  container.innerHTML=html||'<div style="color:var(--ink3);text-align:center;padding:20px">無資料</div>';
 }
 
 
