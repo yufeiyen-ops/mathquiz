@@ -277,7 +277,6 @@ select.sel-big:focus{border-color:var(--pri)}
     <button class="tab" onclick="goTab('teacher',this)" id="tab-teacher">老師出題</button>
     <button class="tab on" onclick="goTab('student',this)" id="tab-student">學生作答</button>
     <button class="tab" onclick="goTab('stats',this)" id="tab-stats">統計分析</button>
-    <button class="tab" onclick="goTab('history',this)" id="tab-history">歷史紀錄</button>
     <button class="tab" id="admin-tab" onclick="openSetup()" style="display:none">⚙ 設定</button>
   </div>
 </div>
@@ -380,33 +379,17 @@ select.sel-big:focus{border-color:var(--pri)}
 
 <!-- ═══ STATS ═══ -->
 <div class="panel" id="panel-stats">
-  <div id="stats-empty" class="empty">
-    <div class="empty-icon">📊</div>
-    <div class="empty-title">尚無作答資料</div>
-    <div class="empty-hint">學生完成作答後，統計結果會出現在這裡</div>
-  </div>
-  <div id="stats-live" style="display:none">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:12px;color:var(--ink3)">自動更新 · 每 5 秒</div>
-      <div class="pulse pulse-g" style="display:inline-block"></div>
-    </div>
-    <div id="stats-content"></div>
-  </div>
-</div>
-
-<!-- ═══ HISTORY ═══ -->
-<div class="panel" id="panel-history">
   <div class="card">
-    <div class="card-title">📋 歷史測驗紀錄</div>
-    <div id="hist-list">
+    <div class="card-title">📋 所有測驗紀錄</div>
+    <div id="stats-quiz-list">
       <div class="empty" style="padding:32px 0">
-        <div class="empty-icon" style="font-size:32px">📂</div>
-        <div class="empty-hint">還沒有歷史紀錄</div>
+        <div class="empty-icon" style="font-size:32px">📭</div>
+        <div class="empty-hint">尚無測驗紀錄</div>
       </div>
     </div>
   </div>
-  <div id="hist-detail" style="display:none"></div>
 </div>
+
 
 </div><!-- /main -->
 
@@ -1014,6 +997,16 @@ function updateStatBadge(n){
   el.innerHTML=n>0?`統計分析 <span class="badge">${n}</span>`:'統計分析';
 }
 
+async function deleteHistEntry(qid){
+  if(!db||localMode) return;
+  try{
+    await db.ref('quizpro/history/'+qid).remove();
+    await db.ref('quizpro/responses/'+qid).remove();
+    renderStats();
+  }catch(e){ alert('刪除失敗：'+e.message); }
+}
+
+
 function startStatsPolling(){
   if(statsInterval) clearInterval(statsInterval);
   statsInterval=setInterval(async()=>{
@@ -1281,229 +1274,56 @@ function renderRunStats(container, resp, quiz){
 
 
 async function renderStats(){
-  var empty=document.getElementById('stats-empty');
-  var live=document.getElementById('stats-live');
-  var quiz=currentActiveQuiz;
-  if(!quiz) {
-    if(db&&!localMode){try{var s=await db.ref('quizpro/active').once('value');quiz=s.val();currentActiveQuiz=quiz;}catch(e){}}
-  }
-  if(!Object.keys(liveResponses).length){empty.style.display='block';live.style.display='none';return}
-  empty.style.display='none'; live.style.display='block';
-  var html=buildStatsHTML(liveResponses,quiz);
-  if(html) document.getElementById('stats-content').innerHTML=html;
-}
-
-// ════════════════════════════════════════
-// HISTORY
-// ════════════════════════════════════════
-async function renderHistory(){
-  if(!db||localMode){document.getElementById('hist-list').innerHTML='<div class="empty-hint" style="padding:20px;text-align:center;color:var(--ink3)">歷史紀錄需要 Firebase 連線</div>';return}
-  var snap=await db.ref('quizpro/history').orderByChild('ts').once('value');
-  var items=[]; snap.forEach(c=>items.unshift(c.val()));
-  if(!items.length){document.getElementById('hist-list').innerHTML='<div class="empty" style="padding:32px 0"><div class="empty-icon" style="font-size:32px">📂</div><div class="empty-hint">還沒有歷史紀錄</div></div>';return}
-  document.getElementById('hist-list').innerHTML=items.map(it=>`
-    <div class="hist-row" onclick="loadHistDetail('${it.id}')">
-      <div class="hist-date">${it.date||''}</div>
-      <div><div class="hist-title">${esc(it.title||'未命名測驗')}</div><div class="hist-sub">${(it.students||[]).length} 位學生</div></div>
-      <div class="hist-cnt">${it.count||0} 人已答</div>
-      <button class="hist-del-btn" onclick="delHist('${it.id}');event.stopPropagation()" title="刪除">✕</button>
-    </div>`).join('');
-}
-
-async function loadHistDetail(qid){
-  if(!db) return;
-  var area=document.getElementById('hist-detail');
-  area.style.display='block';
-  area.innerHTML='<div class="card" style="text-align:center;padding:24px;color:var(--ink3)">載入中…</div>';
-  area.scrollIntoView({behavior:'smooth',block:'start'});
-  try{
-    var qs=await db.ref('quizpro/history/'+qid).once('value');
-    var ht=qs.val();
-    var rs=await db.ref('quizpro/responses/'+qid).once('value');
-    var resp=rs.val()||{};
-    if(!Object.keys(resp).length){area.innerHTML=`<div class="card"><div class="card-title">📋 ${esc(ht?.title||'')}</div><div style="color:var(--ink3);font-size:13px;padding:16px 0">此次測驗無作答紀錄</div></div>`;return}
-    var html=buildStatsHTML(resp,ht);
-    area.innerHTML=`<div class="card"><div class="card-title">📋 ${esc(ht?.title||'')} · ${ht?.date||''}</div></div>`+(html||'');
-  }catch(e){area.innerHTML='<div class="card">載入失敗</div>'}
-}
-
-async function delHist(qid){
-  if(!confirm('確定要刪除這筆歷史紀錄嗎？')) return;
-  if(!db) return;
-  try{
-    await db.ref('quizpro/history/'+qid).remove();
-    await db.ref('quizpro/responses/'+qid).remove();
-    renderHistory();
-    document.getElementById('hist-detail').style.display='none';
-  }catch(e){alert('刪除失敗')}
-}
-
-// ════════════════════════════════════════
-// TABS
-// ════════════════════════════════════════
-var teacherUnlocked = false;
-var TEACHER_PASSWORD = '0000';
-
-function goTab(id, el){
-  if((id==='stats'||id==='history'||id==='teacher') && !teacherUnlocked){
-    showPasswordModal(id, el);
+  var listEl=document.getElementById('stats-quiz-list');
+  if(!listEl) return;
+  if(!db||localMode){
+    listEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--ink3);font-size:13px">需要 Firebase 連線</div>';
     return;
   }
-  switchTab(id, el);
-}
-
-function switchTab(id, el){
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  document.getElementById('panel-'+id).classList.add('on');
-  if(el) el.classList.add('on');
-  if(id==='student') initStudentPanel();
-  if(id==='stats') renderStats();
-  if(id==='history') renderHistory();
-  if(id==='teacher'){
-    renderDraftList(); loadDrafts();
-    // auto-reload drafts every 4s while on teacher panel
-    if(window._draftInterval) clearInterval(window._draftInterval);
-    window._draftInterval=setInterval(function(){
-      if(document.getElementById('panel-teacher').classList.contains('on') && teacherUnlocked) loadDrafts();
-      else clearInterval(window._draftInterval);
-    },4000);
-  } else {
-    if(window._draftInterval) clearInterval(window._draftInterval);
-  }
-}
-
-function showPasswordModal(targetId, targetEl){
-  var existing = document.getElementById('pw-modal');
-  if(existing) existing.remove();
-  var modal = document.createElement('div');
-  modal.id = 'pw-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
-
-  var box = document.createElement('div');
-  box.style.cssText='background:#fff;border-radius:16px;padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2)';
-
-  box.innerHTML =
-    '<div style="font-size:28px;text-align:center;margin-bottom:8px">🔐</div>'+
-    '<div style="font-size:16px;font-weight:700;text-align:center;margin-bottom:4px">老師專區</div>'+
-    '<div style="font-size:13px;color:#999;text-align:center;margin-bottom:20px">統計分析與歷史紀錄需要密碼</div>'+
-    '<input id="pw-input" type="password" placeholder="請輸入老師密碼" style="width:100%;padding:11px 14px;border-radius:9px;border:1.5px solid #ddd;font-size:15px;font-family:inherit;outline:none;margin-bottom:10px;text-align:center;letter-spacing:.2em">'+
-    '<div id="pw-error" style="color:#b83232;font-size:13px;text-align:center;margin-bottom:10px;display:none">密碼錯誤，請再試一次</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:12px">'+
-      '<button id="pw-cancel-btn" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #ddd;background:#fff;font-size:14px;cursor:pointer;font-family:inherit">取消</button>'+
-      '<button id="pw-confirm-btn" style="flex:1;padding:10px;border-radius:9px;border:none;background:#1a6b52;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">確認</button>'+
-    '</div>'+
-    '<div style="padding-top:12px;border-top:1px solid #f0f0ea">'+
-      '<div style="font-size:11px;color:#bbb;text-align:center;margin-bottom:8px">變更老師密碼</div>'+
-      '<div style="display:flex;gap:6px">'+
-        '<input id="pw-new" type="password" placeholder="輸入新密碼" style="flex:1;padding:8px 10px;border-radius:8px;border:1.5px solid #ddd;font-size:13px;font-family:inherit;outline:none">'+
-        '<button id="pw-change-btn" style="padding:8px 12px;border-radius:8px;border:1.5px solid #ddd;background:#fff;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap">變更</button>'+
-      '</div>'+
-      '<div id="pw-change-msg" style="font-size:12px;text-align:center;margin-top:6px;display:none"></div>'+
-    '</div>'+
-    '<div id="pw-emergency" style="display:none;margin-top:10px;text-align:center">'+
-      '<button id="pw-emergency-btn" style="font-size:12px;color:#b06000;background:none;border:none;cursor:pointer;text-decoration:underline">🔑 緊急重設密碼</button>'+
-    '</div>';
-
-  modal.appendChild(box);
-  document.body.appendChild(modal);
-
-  document.getElementById('pw-input').onkeydown = function(e){ if(e.key==='Enter') checkPassword(); };
-  document.getElementById('pw-cancel-btn').onclick = function(){ document.getElementById('pw-modal').remove(); };
-  document.getElementById('pw-confirm-btn').onclick = checkPassword;
-  document.getElementById('pw-change-btn').onclick = changePassword;
-  document.getElementById('pw-emergency-btn').onclick = emergencyReset;
-
-  setTimeout(function(){ document.getElementById('pw-input').focus(); }, 100);
-  window._pwTarget = {id: targetId, el: targetEl};
-}
-
-function checkPassword(){
-  var saved = localStorage.getItem('qpro_teacher_pw') || TEACHER_PASSWORD;
-  var input = document.getElementById('pw-input').value;
-  if(input === saved){
-    _pwFailCount = 0;
-    teacherUnlocked = true;
-    document.getElementById('pw-modal').remove();
-    var t = window._pwTarget;
-    switchTab(t.id, t.el);
-    if(t.id==='teacher'){ renderDraftList(); loadDrafts(); }
-  } else {
-    _pwFailCount++;
-    document.getElementById('pw-input').value='';
-    document.getElementById('pw-input').focus();
-    if(_pwFailCount >= 3){
-      document.getElementById('pw-error').textContent='密碼錯誤 3 次，可使用下方「緊急重設」';
-      document.getElementById('pw-emergency').style.display='block';
-    } else {
-      document.getElementById('pw-error').textContent='密碼錯誤，請再試一次（'+_pwFailCount+'/3）';
+  listEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--ink3);font-size:13px">載入中…</div>';
+  try{
+    var snap=await db.ref('quizpro/history').orderByChild('ts').once('value');
+    var items=[]; snap.forEach(function(c){ items.unshift(c.val()); });
+    if(!items.length){
+      listEl.innerHTML='<div style="text-align:center;padding:32px;color:var(--ink3)"><div style="font-size:32px;margin-bottom:8px">📭</div><div>尚無測驗紀錄<br>發布測驗後會出現在這裡</div></div>';
+      return;
     }
-    document.getElementById('pw-error').style.display='block';
+    listEl.innerHTML='';
+    items.forEach(function(it){
+      var row=document.createElement('div');
+      row.style.cssText='display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;padding:12px 6px;border-bottom:1px solid var(--surf2);cursor:pointer;border-radius:8px;transition:background .15s';
+      row.onmouseover=function(){ this.style.background='var(--surf2)'; };
+      row.onmouseout=function(){ this.style.background=''; };
+      var isActive=activeQuizId===it.id;
+      var badge=isActive?'<span style="background:var(--pri);color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;margin-left:6px">進行中</span>':'';
+      var delBtn=document.createElement('button');
+      delBtn.textContent='✕';
+      delBtn.title='刪除此紀錄';
+      delBtn.style.cssText='padding:5px 10px;border-radius:7px;border:1px solid #ddd;background:#fff;color:#aaa;cursor:pointer;font-size:13px;flex-shrink:0;transition:all .15s';
+      delBtn.onmouseover=function(){ this.style.background='var(--red-l)'; this.style.color='var(--red)'; this.style.borderColor='var(--red)'; };
+      delBtn.onmouseout=function(){ this.style.background='#fff'; this.style.color='#aaa'; this.style.borderColor='#ddd'; };
+      row.style.cssText='display:grid;grid-template-columns:auto 1fr auto auto auto;gap:12px;align-items:center;padding:12px 6px;border-bottom:1px solid var(--surf2);cursor:pointer;border-radius:8px;transition:background .15s';
+      row.innerHTML=
+        '<div style="font-size:12px;color:var(--ink3);font-family:monospace;white-space:nowrap">'+(it.date||'')+'</div>'+
+        '<div>'+
+          '<div style="font-size:14px;font-weight:600">'+esc(it.title||'未命名測驗')+badge+'</div>'+
+          '<div style="font-size:12px;color:var(--ink3);margin-top:1px">'+(it.students||[]).length+' 位學生</div>'+
+        '</div>'+
+        '<div style="font-size:13px;font-weight:600;color:var(--pri)">'+(it.count||0)+' 人已答</div>'+
+        '<div style="font-size:20px;color:var(--ink3)">›</div>';
+      row.appendChild(delBtn);
+      (function(id,title){
+        row.onclick=function(e){ if(e.target===delBtn) return; loadHistDetail(id); };
+        delBtn.onclick=function(e){
+          e.stopPropagation();
+          if(!confirm('確定要刪除「'+title+'」的測驗紀錄嗎？
+此動作無法復原！')) return;
+          deleteHistEntry(id);
+        };
+      })(it.id, it.title||'此測驗');
+      listEl.appendChild(row);
+    });
+  }catch(e){
+    listEl.innerHTML='<div style="color:var(--red);padding:16px">載入失敗：'+e.message+'</div>';
   }
 }
-function emergencyReset(){
-  var code = prompt('請輸入緊急重設碼：');
-  if(code === 'RESET2024'){
-    localStorage.removeItem('qpro_teacher_pw');
-    _pwFailCount = 0;
-    document.getElementById('pw-error').style.display='none';
-    document.getElementById('pw-emergency').style.display='none';
-    document.getElementById('pw-input').placeholder='密碼已重設，請輸入 0000';
-    document.getElementById('pw-input').focus();
-  } else {
-    alert('重設碼錯誤！');
-  }
-}
-
-function changePassword(){
-  var newPw = document.getElementById('pw-new').value.trim();
-  var msg = document.getElementById('pw-change-msg');
-  if(!newPw){ msg.style.display='block'; msg.style.color='#b83232'; msg.textContent='請輸入新密碼'; return; }
-  localStorage.setItem('qpro_teacher_pw', newPw);
-  msg.style.display='block'; msg.style.color='#1a6b52'; msg.textContent='✓ 密碼已變更！';
-  document.getElementById('pw-new').value='';
-}
-
-// ════════════════════════════════════════
-// UTILS
-// ════════════════════════════════════════
-function safeName(n){return(n||'').replace(/[.#$\/\[\]\s]/g,'_')}
-function formatDate(d){return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0')}
-
-// ════════════════════════════════════════
-// INIT
-// ════════════════════════════════════════
-(async function init(){
-  renderImgGrid(); renderAnsGrid();
-  [
-    '1 楊誠安','2 江柏彥','3 施宥安','4 汪碩澄','5 蔡宗祐',
-    '6 陳宥勳','7 吳承軒','8 韓宥能','9 林鉑鎬','10 陳暘皓',
-    '11 吳芠𥠹','12 杜修語','13 陳廷祐','14 陳柏丞','15 洪莞喻',
-    '16 王筱雯','17 楊喬羽','18 孫妤婕','19 陳亭嫣','20 鍾瑀芯',
-    '21 吳芠稹','22 陳品如','23 簡佩莀','24 洪貝瑄','25 林芷琦'
-  ].forEach(n=>addStu(n));
-  // 顯示管理員按鈕（網址含 ?admin 才顯示）
-  if(location.search.includes('admin') || location.hash.includes('admin')){
-    var ab = document.getElementById('admin-tab');
-    if(ab) ab.style.display='inline-block';
-  }  // 內建 Firebase 設定，學生打開不會看到設定畫面
-  var builtInCfg = {
-    apiKey: "AIzaSyB3MFkf8vx5gYpVsp3wHm5FUOo5ewa8bdk",
-    authDomain: "quiz-db3d2.firebaseapp.com",
-    databaseURL: "https://quiz-db3d2-default-rtdb.firebaseio.com",
-    projectId: "quiz-db3d2",
-    storageBucket: "quiz-db3d2.firebasestorage.app",
-    messagingSenderId: "169436596004",
-    appId: "1:169436596004:web:618ddcb077f64e229a55b1"
-  };
-  var ok = initFirebase(builtInCfg);
-  currentCfg = builtInCfg;
-  localStorage.setItem(CFG_KEY, JSON.stringify(builtInCfg));
-  closeSetup();
-  if(ok) await loadActiveQuiz();
-  // 預設顯示學生作答頁面
-  initStudentPanel();
-})();
-</script>
-</body>
-</html>
