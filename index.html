@@ -1007,6 +1007,15 @@ async function deleteHistEntry(qid){
 }
 
 
+async function deleteHistEntry(qid){
+  if(!db||localMode) return;
+  try{
+    await db.ref('mathquiz/history/'+qid).remove();
+    await db.ref('mathquiz/responses/'+qid).remove();
+    renderStats();
+  }catch(e){ alert('刪除失敗：'+e.message); }
+}
+
 function startStatsPolling(){
   if(statsInterval) clearInterval(statsInterval);
   statsInterval=setInterval(async()=>{
@@ -1020,310 +1029,165 @@ function startStatsPolling(){
   },5000);
 }
 
-function buildStatsHTML(responses, quiz){
-  var names=Object.keys(responses);
-  if(!names.length) return null;
-  var students=quiz?.students||[];
-  var total=names.reduce(function(s,k){return s+responses[k].score},0);
-  var avg=(total/names.length).toFixed(1);
-  var errC=[0,0,0,0,0],errW=[[],[],[],[],[]];
-  names.forEach(function(k){
-    var displayName=students.find(function(s){return safeName(s)===k})||k;
-    (responses[k].details||[]).forEach(function(d,i){
-      if(d&&!d.ok){errC[i]++;errW[i].push(displayName)}
-    });
-  });
-  var hardest=errC.indexOf(Math.max(...errC));
+// ════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════
+var teacherUnlocked = false;
+var TEACHER_PASSWORD = '0000';
+var _pwFailCount = 0;
 
-  // ── Summary cards ──
-  var cards='<div class="stat-cards">'+
-    '<div class="sc"><div class="num">'+names.length+'</div><div class="lbl">已作答人數</div></div>'+
-    '<div class="sc"><div class="num" style="color:var(--pri)">'+avg+'</div><div class="lbl">班級平均分</div></div>'+
-    '<div class="sc"><div class="num" style="color:var(--red)">題 '+(hardest+1)+'</div><div class="lbl">最多人答錯</div></div>'+
-  '</div>';
-
-  // ── Per-question choice analysis ──
-  var choiceRows='';
-  for(var qi=0;qi<5;qi++){
-    // Count each option A/B/C/D
-    var optCount={A:0,B:0,C:0,D:0};
-    var optWho={A:[],B:[],C:[],D:[]};
-    names.forEach(function(k){
-      var d=(responses[k].details||[])[qi];
-      if(d&&d.given){
-        var g=d.given.toUpperCase();
-        if(optCount[g]!==undefined){
-          optCount[g]++;
-          var displayName=students.find(function(s){return safeName(s)===k})||k;
-          optWho[g].push(displayName);
-        }
-      }
-    });
-    var correct=(quiz&&quiz.answers&&quiz.answers[qi]||'').toUpperCase();
-    var total_q=names.length||1;
-    var thumb=quiz&&quiz.images&&quiz.images[qi]
-      ?'<img src="'+quiz.images[qi]+'" onclick="showImgLightbox(this.src)" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:2px solid var(--pri-b);margin-right:12px;vertical-align:middle;cursor:zoom-in" title="點擊放大查看題目">'
-      :'';
-
-    var optHtml='';
-    ['A','B','C','D'].forEach(function(opt){
-      var cnt=optCount[opt];
-      var pct=Math.round(cnt/total_q*100);
-      var isCorrect=opt===correct;
-      var barColor=isCorrect?'var(--pri)':'var(--red)';
-      var labelStyle=isCorrect
-        ?'font-weight:700;color:var(--pri)'
-        :'color:var(--ink2)';
-      var whoHtml=optWho[opt].length
-        ?optWho[opt].map(function(n){
-            return '<span style="display:inline-block;background:'+(isCorrect?'var(--pri-l)':'var(--red-l)')+';color:'+(isCorrect?'var(--pri)':'var(--red)')+';border-radius:99px;padding:1px 8px;font-size:11px;margin:2px;font-weight:500">'+esc(n)+'</span>';
-          }).join('')
-        :'<span style="font-size:12px;color:var(--ink3)">無人選擇</span>';
-      optHtml+=
-        '<div style="margin-bottom:10px">'+
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
-            '<div style="width:24px;height:24px;border-radius:50%;background:'+(isCorrect?'var(--pri)':'var(--surf2)')+';color:'+(isCorrect?'#fff':'var(--ink2)')+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">'+opt+'</div>'+
-            '<div style="flex:1;height:10px;background:var(--surf2);border-radius:5px;overflow:hidden">'+
-              '<div style="height:100%;width:'+pct+'%;background:'+barColor+';border-radius:5px;transition:width .5s ease"></div>'+
-            '</div>'+
-            '<div style="font-size:13px;font-weight:700;min-width:36px;text-align:right;color:'+(isCorrect?'var(--pri)':'var(--ink2)')+'">'+pct+'%</div>'+
-            '<div style="font-size:12px;color:var(--ink3);min-width:28px">('+cnt+'人)</div>'+
-            (isCorrect?'<div style="font-size:11px;background:var(--pri-l);color:var(--pri);border-radius:4px;padding:1px 6px;font-weight:600">正解</div>':'')+
-          '</div>'+
-          '<div style="padding-left:32px">'+whoHtml+'</div>'+
-        '</div>';
-    });
-
-    choiceRows+=
-      '<div style="background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rad-lg);padding:18px;margin-bottom:12px;box-shadow:var(--sh)">'+
-        '<div style="display:flex;align-items:center;margin-bottom:14px">'+
-          thumb+
-          '<div>'+
-            '<div style="font-size:14px;font-weight:700">題目 '+(qi+1)+'</div>'+
-            '<div style="font-size:12px;color:var(--ink3)">正確答案：<strong style="color:var(--pri);font-family:monospace">'+correct+'</strong> · 錯誤率：<strong style="color:var(--red)">'+Math.round(errC[qi]/total_q*100)+'%</strong></div>'+
-          '</div>'+
-        '</div>'+
-        optHtml+
-      '</div>';
-  }
-  var choiceTable='<div class="card-title" style="margin-top:4px">選項分析（每題各選項人數與比例）</div>'+choiceRows;
-
-  // ── Personal scores ──
-  var prows=names.map(function(k){
-    var r=responses[k]; var s=r.score;
-    var displayName=students.find(function(st){return safeName(st)===k})||k;
-    var pc=s===5?'f':s>=3?'m':'l';
-    var dots=(r.details||[]).map(function(d,i){
-      return '<span class="'+(d.ok?'dot-ok':'dot-fail')+'" title="題'+(i+1)+':'+(d.given||'—')+'">'+(i+1)+'</span>';
-    }).join('');
-    return '<tr><td style="font-weight:600">'+esc(displayName)+'</td><td><span class="sp sp-'+pc+'">'+s+' / 5</span></td><td>'+Math.round(s/5*100)+'%</td><td>'+dots+'</td></tr>';
-  }).join('');
-  var ptable='<div class="card"><div class="card-title">個人成績</div>'+
-    '<table class="tbl"><thead><tr><th>姓名</th><th>分數</th><th>正確率</th><th>每題</th></tr></thead>'+
-    '<tbody>'+prows+'</tbody></table></div>';
-
-  return cards+'<div class="card">'+choiceTable+'</div>'+ptable;
-}
-
-function closeLightbox(){
-  var el=document.getElementById('img-lightbox');
-  if(el) el.remove();
-}
-function showImgLightbox(src){
-  closeLightbox();
-  var box=document.createElement('div');
-  box.id='img-lightbox';
-  box.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:998;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';
-  var inner=document.createElement('div');
-  inner.style.cssText='position:relative;max-width:90vw;max-height:90vh';
-  var img=document.createElement('img');
-  img.src=src;
-  img.style.cssText='max-width:90vw;max-height:85vh;object-fit:contain;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.5);display:block';
-  var closeBtn=document.createElement('button');
-  closeBtn.textContent='✕';
-  closeBtn.style.cssText='position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:50%;background:#fff;border:none;font-size:16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);font-weight:700;color:#333';
-  closeBtn.onclick=closeLightbox;
-  inner.appendChild(img);
-  inner.appendChild(closeBtn);
-  box.appendChild(inner);
-  box.onclick=function(e){ if(e.target===box) closeLightbox(); };
-  document.body.appendChild(box);
-}
-
-
-async function showDraftStats(did){
-  if(!db||localMode){ alert('需要 Firebase 連線'); return; }
-
-  // Get draft info
-  var localDrafts=getDraftsLocal();
-  var draft=localDrafts[did];
-
-  // Also load from Firebase for latest quizIds
-  var quizIds=[];
-  try{
-    var dsnap=await db.ref('mathquiz/drafts/'+did).once('value');
-    var fbDraft=dsnap.val();
-    if(fbDraft&&fbDraft.quizIds) quizIds=fbDraft.quizIds;
-    else if(draft&&draft.quizIds) quizIds=draft.quizIds;
-    if(!draft&&fbDraft) draft=fbDraft;
-  }catch(e){}
-
-  if(!draft){ alert('找不到草稿資料'); return; }
-
-  // Also search history by title as fallback
-  var matchIds=quizIds.slice();
-  try{
-    var hsnap=await db.ref('mathquiz/history').once('value');
-    var hist=hsnap.val()||{};
-    Object.values(hist).forEach(function(h){
-      if(h.title===draft.title && matchIds.indexOf(h.id)===-1) matchIds.push(h.id);
-    });
-  }catch(e){}
-
-  // Load all runs' responses
-  var allRuns=[];
-  for(var i=0;i<matchIds.length;i++){
-    try{
-      var rsnap=await db.ref('mathquiz/responses/'+matchIds[i]).once('value');
-      var resp=rsnap.val()||{};
-      if(Object.keys(resp).length){
-        var hsnap2=await db.ref('mathquiz/history/'+matchIds[i]).once('value');
-        var hdata=hsnap2.val()||{};
-        allRuns.push({id:matchIds[i], date:hdata.date||'', resp:resp});
-      }
-    }catch(e){}
-  }
-
-  // Build modal
-  var existing=document.getElementById('draft-stats-modal');
-  if(existing) existing.remove();
-
-  var modal=document.createElement('div');
-  modal.id='draft-stats-modal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:997;overflow-y:auto;padding:16px';
-  modal.onclick=function(e){ if(e.target===modal) modal.remove(); };
-
-  var box=document.createElement('div');
-  box.style.cssText='background:var(--bg);border-radius:16px;max-width:840px;margin:0 auto;padding:24px;position:relative;min-height:200px';
-
-  // Close button
-  var closeBtn=document.createElement('button');
-  closeBtn.textContent='✕ 關閉';
-  closeBtn.style.cssText='position:sticky;float:right;top:0;padding:7px 16px;border-radius:8px;border:1px solid var(--bdr2);background:#fff;cursor:pointer;font-size:13px;font-family:inherit;z-index:2';
-  closeBtn.onclick=function(){ modal.remove(); };
-  box.appendChild(closeBtn);
-
-  // Title
-  var titleEl=document.createElement('div');
-  titleEl.style.cssText='font-size:17px;font-weight:700;margin-bottom:20px';
-  titleEl.textContent='📊 '+draft.title;
-  box.appendChild(titleEl);
-
-  if(!allRuns.length){
-    var empty=document.createElement('div');
-    empty.style.cssText='text-align:center;padding:48px;color:var(--ink3)';
-    empty.innerHTML='<div style="font-size:36px;margin-bottom:10px">📭</div><div style="font-size:14px">此測驗尚未發布或無學生作答紀錄</div>';
-    box.appendChild(empty);
-  } else {
-    // If multiple runs, show tabs
-    if(allRuns.length>1){
-      var tabsDiv=document.createElement('div');
-      tabsDiv.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--bdr);padding-bottom:12px';
-      allRuns.forEach(function(run,idx){
-        var tb=document.createElement('button');
-        tb.textContent=(idx===0?'最新：':'')+run.date+' ('+Object.keys(run.resp).length+'人)';
-        tb.dataset.runIdx=idx;
-        tb.style.cssText='padding:6px 14px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s;'+(idx===0?'background:var(--pri);color:#fff;border:none;font-weight:600':'background:#fff;color:var(--ink2);border:1px solid var(--bdr2)');
-        tb.onclick=function(){
-          var ri=parseInt(this.dataset.runIdx);
-          tabsDiv.querySelectorAll('button').forEach(function(b){
-            b.style.background=b===tb?'var(--pri)':'#fff';
-            b.style.color=b===tb?'#fff':'var(--ink2)';
-            b.style.border=b===tb?'none':'1px solid var(--bdr2)';
-            b.style.fontWeight=b===tb?'600':'400';
-          });
-          renderRunStats(statsArea, allRuns[ri].resp, draft);
-        };
-        tabsDiv.appendChild(tb);
-      });
-      box.appendChild(tabsDiv);
-    }
-
-    var statsArea=document.createElement('div');
-    box.appendChild(statsArea);
-
-    // Load full quiz with images from Firebase active or use draft
-    var quizForStats=draft;
-    try{
-      var asnap=await db.ref('mathquiz/active').once('value');
-      var aQuiz=asnap.val();
-      if(aQuiz&&aQuiz.title===draft.title) quizForStats=aQuiz;
-    }catch(e){}
-
-    renderRunStats(statsArea, allRuns[0].resp, quizForStats);
-  }
-
-  modal.appendChild(box);
-  document.body.appendChild(modal);
-}
-
-function renderRunStats(container, resp, quiz){
-  var html=buildStatsHTML(resp, quiz);
-  container.innerHTML=html||'<div style="color:var(--ink3);text-align:center;padding:20px">無資料</div>';
-}
-
-
-async function renderStats(){
-  var listEl=document.getElementById('stats-quiz-list');
-  if(!listEl) return;
-  if(!db||localMode){
-    listEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--ink3);font-size:13px">需要 Firebase 連線</div>';
+function goTab(id, el){
+  if((id==='stats'||id==='teacher') && !teacherUnlocked){
+    showPasswordModal(id, el);
     return;
   }
-  listEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--ink3);font-size:13px">載入中…</div>';
-  try{
-    var snap=await db.ref('mathquiz/history').orderByChild('ts').once('value');
-    var items=[]; snap.forEach(function(c){ items.unshift(c.val()); });
-    if(!items.length){
-      listEl.innerHTML='<div style="text-align:center;padding:32px;color:var(--ink3)"><div style="font-size:32px;margin-bottom:8px">📭</div><div>尚無測驗紀錄<br>發布測驗後會出現在這裡</div></div>';
-      return;
-    }
-    listEl.innerHTML='';
-    items.forEach(function(it){
-      var row=document.createElement('div');
-      row.style.cssText='display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;padding:12px 6px;border-bottom:1px solid var(--surf2);cursor:pointer;border-radius:8px;transition:background .15s';
-      row.onmouseover=function(){ this.style.background='var(--surf2)'; };
-      row.onmouseout=function(){ this.style.background=''; };
-      var isActive=activeQuizId===it.id;
-      var badge=isActive?'<span style="background:var(--pri);color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;margin-left:6px">進行中</span>':'';
-      var delBtn=document.createElement('button');
-      delBtn.textContent='✕';
-      delBtn.title='刪除此紀錄';
-      delBtn.style.cssText='padding:5px 10px;border-radius:7px;border:1px solid #ddd;background:#fff;color:#aaa;cursor:pointer;font-size:13px;flex-shrink:0;transition:all .15s';
-      delBtn.onmouseover=function(){ this.style.background='var(--red-l)'; this.style.color='var(--red)'; this.style.borderColor='var(--red)'; };
-      delBtn.onmouseout=function(){ this.style.background='#fff'; this.style.color='#aaa'; this.style.borderColor='#ddd'; };
-      row.style.cssText='display:grid;grid-template-columns:auto 1fr auto auto auto;gap:12px;align-items:center;padding:12px 6px;border-bottom:1px solid var(--surf2);cursor:pointer;border-radius:8px;transition:background .15s';
-      row.innerHTML=
-        '<div style="font-size:12px;color:var(--ink3);font-family:monospace;white-space:nowrap">'+(it.date||'')+'</div>'+
-        '<div>'+
-          '<div style="font-size:14px;font-weight:600">'+esc(it.title||'未命名測驗')+badge+'</div>'+
-          '<div style="font-size:12px;color:var(--ink3);margin-top:1px">'+(it.students||[]).length+' 位學生</div>'+
-        '</div>'+
-        '<div style="font-size:13px;font-weight:600;color:var(--pri)">'+(it.count||0)+' 人已答</div>'+
-        '<div style="font-size:20px;color:var(--ink3)">›</div>';
-      row.appendChild(delBtn);
-      (function(id,title){
-        row.onclick=function(e){ if(e.target===delBtn) return; loadHistDetail(id); };
-        delBtn.onclick=function(e){
-          e.stopPropagation();
-          if(!confirm('確定要刪除「'+title+'」的測驗紀錄嗎？
-此動作無法復原！')) return;
-          deleteHistEntry(id);
-        };
-      })(it.id, it.title||'此測驗');
-      listEl.appendChild(row);
-    });
-  }catch(e){
-    listEl.innerHTML='<div style="color:var(--red);padding:16px">載入失敗：'+e.message+'</div>';
+  switchTab(id, el);
+}
+
+function switchTab(id, el){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('panel-'+id).classList.add('on');
+  if(el) el.classList.add('on');
+  if(id==='student') initStudentPanel();
+  if(id==='stats') renderStats();
+  if(id==='teacher'){
+    renderDraftList(); loadDrafts();
+    if(window._draftInterval) clearInterval(window._draftInterval);
+    window._draftInterval=setInterval(function(){
+      if(document.getElementById('panel-teacher').classList.contains('on') && teacherUnlocked) loadDrafts();
+      else clearInterval(window._draftInterval);
+    },4000);
+  } else {
+    if(window._draftInterval) clearInterval(window._draftInterval);
   }
 }
+
+function showPasswordModal(targetId, targetEl){
+  var existing = document.getElementById('pw-modal');
+  if(existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'pw-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+  var box = document.createElement('div');
+  box.style.cssText='background:#fff;border-radius:16px;padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2)';
+  box.innerHTML =
+    '<div style="font-size:28px;text-align:center;margin-bottom:8px">🔐</div>'+
+    '<div style="font-size:16px;font-weight:700;text-align:center;margin-bottom:4px">老師專區</div>'+
+    '<div style="font-size:13px;color:#999;text-align:center;margin-bottom:20px">請輸入老師密碼</div>'+
+    '<input id="pw-input" type="password" placeholder="請輸入老師密碼" style="width:100%;padding:11px 14px;border-radius:9px;border:1.5px solid #ddd;font-size:15px;font-family:inherit;outline:none;margin-bottom:10px;text-align:center;letter-spacing:.2em">'+
+    '<div id="pw-error" style="color:#b83232;font-size:13px;text-align:center;margin-bottom:10px;display:none">密碼錯誤，請再試一次</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px">'+
+      '<button id="pw-cancel-btn" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #ddd;background:#fff;font-size:14px;cursor:pointer;font-family:inherit">取消</button>'+
+      '<button id="pw-confirm-btn" style="flex:1;padding:10px;border-radius:9px;border:none;background:#1a6b52;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">確認</button>'+
+    '</div>'+
+    '<div style="padding-top:12px;border-top:1px solid #f0f0ea">'+
+      '<div style="font-size:11px;color:#bbb;text-align:center;margin-bottom:8px">變更老師密碼</div>'+
+      '<div style="display:flex;gap:6px">'+
+        '<input id="pw-new" type="password" placeholder="輸入新密碼" style="flex:1;padding:8px 10px;border-radius:8px;border:1.5px solid #ddd;font-size:13px;font-family:inherit;outline:none">'+
+        '<button id="pw-change-btn" style="padding:8px 12px;border-radius:8px;border:1.5px solid #ddd;background:#fff;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap">變更</button>'+
+      '</div>'+
+      '<div id="pw-change-msg" style="font-size:12px;text-align:center;margin-top:6px;display:none"></div>'+
+    '</div>'+
+    '<div id="pw-emergency" style="display:none;margin-top:10px;text-align:center">'+
+      '<button id="pw-emergency-btn" style="font-size:12px;color:#b06000;background:none;border:none;cursor:pointer;text-decoration:underline">🔑 緊急重設密碼</button>'+
+    '</div>';
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+  document.getElementById('pw-input').onkeydown = function(e){ if(e.key==='Enter') checkPassword(); };
+  document.getElementById('pw-cancel-btn').onclick = function(){ document.getElementById('pw-modal').remove(); };
+  document.getElementById('pw-confirm-btn').onclick = checkPassword;
+  document.getElementById('pw-change-btn').onclick = changePassword;
+  document.getElementById('pw-emergency-btn').onclick = emergencyReset;
+  setTimeout(function(){ document.getElementById('pw-input').focus(); }, 100);
+  window._pwTarget = {id: targetId, el: targetEl};
+}
+
+function checkPassword(){
+  var saved = localStorage.getItem('mathquiz_teacher_pw') || TEACHER_PASSWORD;
+  var input = document.getElementById('pw-input').value;
+  if(input === saved){
+    _pwFailCount = 0;
+    teacherUnlocked = true;
+    document.getElementById('pw-modal').remove();
+    var t = window._pwTarget;
+    switchTab(t.id, t.el);
+    if(t.id==='teacher'){ renderDraftList(); loadDrafts(); }
+  } else {
+    _pwFailCount++;
+    document.getElementById('pw-input').value='';
+    document.getElementById('pw-input').focus();
+    if(_pwFailCount >= 3){
+      document.getElementById('pw-error').textContent='密碼錯誤 3 次，可使用下方「緊急重設」';
+      document.getElementById('pw-emergency').style.display='block';
+    } else {
+      document.getElementById('pw-error').textContent='密碼錯誤，請再試一次（'+_pwFailCount+'/3）';
+    }
+    document.getElementById('pw-error').style.display='block';
+  }
+}
+
+function emergencyReset(){
+  var code = prompt('請輸入緊急重設碼：');
+  if(code === 'RESET2024'){
+    localStorage.removeItem('mathquiz_teacher_pw');
+    _pwFailCount = 0;
+    document.getElementById('pw-error').style.display='none';
+    document.getElementById('pw-emergency').style.display='none';
+    document.getElementById('pw-input').placeholder='密碼已重設，請輸入 0000';
+    document.getElementById('pw-input').focus();
+  } else {
+    alert('重設碼錯誤！');
+  }
+}
+
+function changePassword(){
+  var newPw = document.getElementById('pw-new').value.trim();
+  var msg = document.getElementById('pw-change-msg');
+  if(!newPw){ msg.style.display='block'; msg.style.color='#b83232'; msg.textContent='請輸入新密碼'; return; }
+  localStorage.setItem('mathquiz_teacher_pw', newPw);
+  msg.style.display='block'; msg.style.color='#1a6b52'; msg.textContent='✓ 密碼已變更！';
+  document.getElementById('pw-new').value='';
+}
+
+// ════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════
+function safeName(n){return(n||'').replace(/[.#$\/\[\]\s]/g,'_')}
+function formatDate(d){return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0')}
+
+// ════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════
+(async function init(){
+  renderImgGrid(); renderAnsGrid();
+  [
+    '1 楊誠安','2 江柏彥','3 施宥安','4 汪碩澄','5 蔡宗祐',
+    '6 陳宥勳','7 吳承軒','8 韓宥能','9 林鉑鎬','10 陳暘皓',
+    '11 吳芠𥠹','12 杜修語','13 陳廷祐','14 陳柏丞','15 洪莞喻',
+    '16 王筱雯','17 楊喬羽','18 孫妤婕','19 陳亭嫣','20 鍾瑀芯',
+    '21 吳芠稹','22 陳品如','23 簡佩莀','24 洪貝瑄','25 林芷琦'
+  ].forEach(n=>addStu(n));
+  if(location.search.includes('admin') || location.hash.includes('admin')){
+    var ab = document.getElementById('admin-tab');
+    if(ab) ab.style.display='inline-block';
+  }
+  var builtInCfg = {
+    apiKey: "AIzaSyB3MFkf8vx5gYpVsp3wHm5FUOo5ewa8bdk",
+    authDomain: "quiz-db3d2.firebaseapp.com",
+    databaseURL: "https://quiz-db3d2-default-rtdb.firebaseio.com",
+    projectId: "quiz-db3d2",
+    storageBucket: "quiz-db3d2.firebasestorage.app",
+    messagingSenderId: "169436596004",
+    appId: "1:169436596004:web:618ddcb077f64e229a55b1"
+  };
+  var ok = initFirebase(builtInCfg);
+  currentCfg = builtInCfg;
+  localStorage.setItem(CFG_KEY, JSON.stringify(builtInCfg));
+  closeSetup();
+  if(ok) await loadActiveQuiz();
+  initStudentPanel();
+})();
+</script>
+</body>
+</html>
