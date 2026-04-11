@@ -319,10 +319,7 @@ select.sel-big:focus{border-color:var(--pri)}
     <button class="btn btn-g btn-sm" onclick="resetQuiz()">清除重設</button>
   </div>
   <div id="pubStatus" style="display:none" class="status-bar sb-green"></div>
-  <div style="display:none;margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center" id="retakeRow">
-    <button class="btn btn-g btn-sm" onclick="resetAllResponses()" style="border-color:#b83232;color:#b83232">🔄 清除所有成績，讓全班重考</button>
-    <span style="font-size:12px;color:var(--ink3)">清除後學生可重新作答同一份測驗</span>
-  </div>
+
   <div style="font-size:12px;color:var(--ink3);margin-top:8px">「立即發布」讓學生馬上作答；「儲存草稿」先存起來，之後再啟用。</div>
 
   <!-- DRAFT LIST -->
@@ -587,7 +584,7 @@ async function publish(){
       await db.ref('mathquiz/active').set(quizData);
       await db.ref('mathquiz/responses/'+qid).set({});
       // save to history (without images to save space)
-      var histEntry={id:qid,title,date:formatDate(new Date()),students:names,answers:[...L.answers],ts:Date.now(),count:0};
+      var histEntry={id:qid,title,date:formatDate(new Date()),students:names,answers:[...L.answers],images:[...L.images],ts:Date.now(),count:0};
       await db.ref('mathquiz/history/'+qid).set(histEntry);
     }
     var el=document.getElementById('pubStatus');
@@ -597,28 +594,12 @@ async function publish(){
     liveResponses={};
     startStatsPolling();
     updateStatBadge(0);
-    document.getElementById('retakeRow').style.display='flex';
   } catch(e) {
     alert('發布失敗：'+e.message);
   }
   btn.innerHTML='🚀 發布測驗'; btn.disabled=false;
 }
 
-async function resetAllResponses(){
-  if(!confirm('確定要清除全班成績，讓所有人重新作答這份測驗嗎？此動作無法復原！')) return;
-  if(!activeQuizId){alert('目前沒有進行中的測驗');return}
-  try{
-    if(db&&!localMode){
-      await db.ref('mathquiz/responses/'+activeQuizId).set({});
-      await db.ref('mathquiz/history/'+activeQuizId+'/count').set(0);
-    }
-    liveResponses={};
-    updateStatBadge(0);
-    var el=document.getElementById('pubStatus');
-    el.style.display='flex'; el.className='status-bar sb-green';
-    el.innerHTML='<div class="pulse pulse-g"></div>✅ 全班成績已清除！學生可以重新作答了。';
-  }catch(e){alert('清除失敗：'+e.message)}
-}
 
 function resetQuiz(){
   if(!confirm('清除本次設定並重新出題？')) return;
@@ -770,7 +751,7 @@ async function activateDraft(did){
       await db.ref('mathquiz/active').set(quizData);
       await db.ref('mathquiz/responses/'+qid).set({});
       var hist={id:qid,title:draft.title,date:formatDate(new Date()),
-        students:draft.students,answers:draft.answers,ts:Date.now(),count:0};
+        students:draft.students,answers:draft.answers,images:draft.images||[],ts:Date.now(),count:0};
       await db.ref('mathquiz/history/'+qid).set(hist);
     }catch(e){alert('啟用失敗：'+e.message);return}
   }
@@ -789,7 +770,6 @@ async function activateDraft(did){
   var el=document.getElementById('pubStatus');
   el.style.display='flex'; el.className='status-bar sb-green';
   el.innerHTML='<div class="pulse pulse-g"></div>✅ 已啟用「'+esc(draft.title)+'」！學生現在可以作答了。';
-  document.getElementById('retakeRow').style.display='flex';
   currentActiveQuiz=quizData;
 
   // Store quizId back into draft so we can look up stats later
@@ -999,6 +979,7 @@ function updateStatBadge(n){
 
 async function deleteHistEntry(qid){
   if(!db||localMode) return;
+  if(!qid){ alert('此紀錄 ID 無效，無法刪除'); return; }
   try{
     await db.ref('mathquiz/history/'+qid).remove();
     await db.ref('mathquiz/responses/'+qid).remove();
@@ -1009,6 +990,7 @@ async function deleteHistEntry(qid){
 
 async function deleteHistEntry(qid){
   if(!db||localMode) return;
+  if(!qid){ alert('此紀錄 ID 無效，無法刪除'); return; }
   try{
     await db.ref('mathquiz/history/'+qid).remove();
     await db.ref('mathquiz/responses/'+qid).remove();
@@ -1174,7 +1156,7 @@ async function showDraftStats(did){
       if(Object.keys(resp).length){
         var hs=await db.ref('mathquiz/history/'+matchIds[i]).once('value');
         var hdata=hs.val()||{};
-        allRuns.push({id:matchIds[i],date:hdata.date||'',resp:resp});
+        allRuns.push({id:matchIds[i],date:hdata.date||'',resp:resp,histData:hdata});
       }
     }catch(e){}
   }
@@ -1225,12 +1207,17 @@ async function showDraftStats(did){
     }
     var statsArea=document.createElement('div');
     box.appendChild(statsArea);
+    // Use history images if available (most recent run with images)
     var quizForStats=draft;
-    try{
-      var asnap=await db.ref('mathquiz/active').once('value');
-      var aQuiz=asnap.val();
-      if(aQuiz&&aQuiz.title===draft.title) quizForStats=aQuiz;
-    }catch(e){}
+    var runWithImages=allRuns.find(function(r){ return r.histData&&r.histData.images&&r.histData.images.some(function(i){return i}); });
+    if(runWithImages) quizForStats=Object.assign({},draft,{images:runWithImages.histData.images});
+    else {
+      try{
+        var asnap=await db.ref('mathquiz/active').once('value');
+        var aQuiz=asnap.val();
+        if(aQuiz&&aQuiz.title===draft.title) quizForStats=aQuiz;
+      }catch(e){}
+    }
     renderRunStats(statsArea,allRuns[0].resp,quizForStats);
   }
   modal.appendChild(box);
@@ -1279,12 +1266,15 @@ async function loadHistDetail(qid){
       noData.innerHTML='<div style="font-size:36px;margin-bottom:10px">📭</div><div>此次測驗無作答紀錄</div>';
       box.appendChild(noData);
     } else {
+      // Use history images if available, fallback to active quiz
       var quizForStats=ht;
-      try{
-        var asnap=await db.ref('mathquiz/active').once('value');
-        var aQuiz=asnap.val();
-        if(aQuiz&&ht&&aQuiz.title===ht.title) quizForStats=aQuiz;
-      }catch(e){}
+      if(!ht||!ht.images||!ht.images.some(function(i){return i})){
+        try{
+          var asnap=await db.ref('mathquiz/active').once('value');
+          var aQuiz=asnap.val();
+          if(aQuiz&&ht&&aQuiz.title===ht.title) quizForStats=aQuiz;
+        }catch(e){}
+      }
       var statsDiv=document.createElement('div');
       statsDiv.innerHTML=buildStatsHTML(resp,quizForStats)||'';
       box.appendChild(statsDiv);
@@ -1315,7 +1305,7 @@ async function renderStats(){
       row.style.cssText='display:grid;grid-template-columns:auto 1fr auto auto auto;gap:12px;align-items:center;padding:12px 6px;border-bottom:1px solid var(--surf2);cursor:pointer;border-radius:8px;transition:background .15s';
       row.onmouseover=function(){ this.style.background='var(--surf2)'; };
       row.onmouseout=function(){ this.style.background=''; };
-      var isActive=activeQuizId===it.id;
+      var isActive=it.id&&activeQuizId===it.id;
       var badge=isActive?'<span style="background:var(--pri);color:#fff;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;margin-left:6px">進行中</span>':'';
       var delBtn=document.createElement('button');
       delBtn.textContent='✕';
@@ -1336,6 +1326,15 @@ async function renderStats(){
         row.onclick=function(e){ if(e.target===delBtn) return; loadHistDetail(id); };
         delBtn.onclick=function(e){
           e.stopPropagation();
+          if(!id){
+            if(!confirm('此紀錄沒有 ID，確定要從清單移除嗎？')) return;
+            // Try to find by title and remove
+            db.ref('mathquiz/history').orderByChild('title').equalTo(title).once('value').then(function(snap){
+              snap.forEach(function(c){ c.ref.remove(); });
+              renderStats();
+            });
+            return;
+          }
           if(!confirm('確定要刪除「'+title+'」的測驗紀錄嗎？此動作無法復原！')) return;
           deleteHistEntry(id);
         };
